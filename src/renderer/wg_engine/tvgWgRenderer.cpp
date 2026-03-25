@@ -401,7 +401,7 @@ bool WgRenderer::sync()
     if (!dstTexture) return false;
 
     // insure that surface and offscreen target have the same size
-    if ((wgpuTextureGetWidth(dstTexture) == mRenderTargetRoot.width) && 
+    if ((wgpuTextureGetWidth(dstTexture) == mRenderTargetRoot.width) &&
         (wgpuTextureGetHeight(dstTexture) == mRenderTargetRoot.height)) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
@@ -410,6 +410,11 @@ bool WgRenderer::sync()
         mContext.submitCommandEncoder(commandEncoder);
         mContext.releaseCommandEncoder(commandEncoder);
         mContext.releaseTextureView(dstTextureView);
+    }
+
+    // Present the surface — required by Dawn (wgpu-native presents implicitly)
+    if (surface) {
+        wgpuSurfacePresent(surface);
     }
 
     return true;
