@@ -262,6 +262,16 @@ Result WgCanvas::target(void* device, void* instance, void* target, uint32_t w, 
 }
 
 
+void* WgCanvas::device() const noexcept
+{
+#ifdef THORVG_WG_RASTER_SUPPORT
+    auto renderer = static_cast<WgRenderer*>(pImpl->renderer);
+    if (renderer) return renderer->nativeDevice();
+#endif
+    return nullptr;
+}
+
+
 WgCanvas* WgCanvas::gen(EngineOption op) noexcept
 {
 #ifdef THORVG_WG_RASTER_SUPPORT

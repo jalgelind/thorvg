@@ -2444,6 +2444,14 @@ struct TVG_API WgCanvas final : Canvas
      */
     static WgCanvas* gen(EngineOption op = EngineOption::Default) noexcept;
 
+    /**
+     * @brief Returns the WGPUDevice used by this canvas.
+     *
+     * Needed for creating SharedTextureMemory for zero-copy texture import.
+     * Returns nullptr if the canvas has not been targeted yet.
+     */
+    void* device() const noexcept;
+
     _TVG_DECLARE_PRIVATE(WgCanvas);
 };
 
