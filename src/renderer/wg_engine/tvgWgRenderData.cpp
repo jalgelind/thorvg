@@ -76,11 +76,36 @@ void WgImageData::update(WgContext& context, const Fill* fill)
 };
 
 
+void WgImageData::setExternal(WgContext& context, WGPUTexture extTexture, uint32_t w, uint32_t h)
+{
+    // Release previous (only if we own it)
+    if (!external) {
+        context.layouts.releaseBindGroup(bindGroup);
+        context.releaseTextureView(textureView);
+        context.releaseTexture(texture);
+    } else {
+        context.layouts.releaseBindGroup(bindGroup);
+        context.releaseTextureView(textureView);
+    }
+    // Reference external texture (don't own it)
+    texture = extTexture;
+    external = true;
+    textureView = context.createTextureView(texture);
+    bindGroup = context.layouts.createBindGroupTexSampled(context.samplerLinearClamp, textureView);
+}
+
+
 void WgImageData::release(WgContext& context)
 {
     context.layouts.releaseBindGroup(bindGroup);
     context.releaseTextureView(textureView);
-    context.releaseTexture(texture);
+    if (!external) {
+        context.releaseTexture(texture);
+    }
+    texture = {};
+    textureView = {};
+    bindGroup = {};
+    external = false;
 };
 
 //***********************************************************************
@@ -307,6 +332,13 @@ void WgRenderDataPicture::updateSurface(WgContext& context, const RenderSurface*
 {
     meshData.imageBox(surface->w, surface->h, transform);
     if (updateTexture) imageData.update(context, surface, filter);
+}
+
+
+void WgRenderDataPicture::updateExternalTexture(WgContext& context, WGPUTexture extTexture, uint32_t w, uint32_t h, const Matrix& transform)
+{
+    meshData.imageBox(w, h, transform);
+    imageData.setExternal(context, extTexture, w, h);
 }
 
 

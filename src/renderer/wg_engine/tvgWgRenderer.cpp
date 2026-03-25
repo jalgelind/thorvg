@@ -199,6 +199,26 @@ RenderData WgRenderer::prepare(RenderSurface* surface, RenderData data, const Ma
 }
 
 
+RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, RenderData data, const Matrix& transform, Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
+{
+    auto renderDataPicture = data ? (WgRenderDataPicture*)data : mRenderDataPicturePool.allocate(mContext);
+
+    renderDataPicture->viewport = vport;
+    renderDataPicture->transform = transform;
+    if (!data || (flags & (RenderUpdateFlag::Blend | RenderUpdateFlag::Color))) {
+        renderDataPicture->renderSettings.update(mContext, ColorSpace::ABGR8888S, opacity);
+    }
+
+    if (!data || (flags & (RenderUpdateFlag::Transform | RenderUpdateFlag::Path | RenderUpdateFlag::Image))) {
+        renderDataPicture->updateExternalTexture(mContext, (WGPUTexture)nativeTexture, w, h, transform);
+    }
+
+    if (flags & RenderUpdateFlag::Clip) renderDataPicture->updateClips(clips);
+
+    return renderDataPicture;
+}
+
+
 bool WgRenderer::preRender()
 {
     if (mContext.invalid()) return false;

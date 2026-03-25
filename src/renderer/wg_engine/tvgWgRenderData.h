@@ -31,9 +31,11 @@ struct WgImageData {
     WGPUTexture texture{};
     WGPUTextureView textureView{};
     WGPUBindGroup bindGroup{};
+    bool external{};  // true if texture is externally owned (don't release)
 
     void update(WgContext& context, const RenderSurface* surface, FilterMethod filter);
     void update(WgContext& context, const Fill* fill);
+    void setExternal(WgContext& context, WGPUTexture extTexture, uint32_t w, uint32_t h);
     void release(WgContext& context);
 };
 
@@ -115,6 +117,7 @@ struct WgRenderDataPicture: public WgRenderDataPaint
     WgMeshData meshData{};
 
     void updateSurface(WgContext& context, const RenderSurface* surface, const Matrix& transform, FilterMethod filter, bool updateTexture);
+    void updateExternalTexture(WgContext& context, WGPUTexture extTexture, uint32_t w, uint32_t h, const Matrix& transform);
     void release(WgContext& context) override;
     Type type() override { return Type::Picture; };
 };
