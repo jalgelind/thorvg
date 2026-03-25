@@ -1770,6 +1770,22 @@ struct TVG_API Picture : Paint
     static Picture* gen() noexcept;
 
     /**
+     * @brief Load an external native GPU texture as the picture source.
+     *
+     * On the WebGPU backend, @p nativeTexture is a WGPUTexture handle.
+     * The texture is NOT owned by ThorVG — the caller manages its lifetime.
+     * The texture must remain valid until the Picture is removed from the Canvas.
+     *
+     * @param[in] nativeTexture Platform-specific texture handle (WGPUTexture for WG backend).
+     * @param[in] w Width of the texture in pixels.
+     * @param[in] h Height of the texture in pixels.
+     * @return Result::Success on success, Result::NonSupport if the backend doesn't support external textures.
+     *
+     * @note Only supported on the WebGPU (WG) rendering backend.
+     */
+    Result loadExternal(void* nativeTexture, uint32_t w, uint32_t h) noexcept;
+
+    /**
      * @brief Returns the ID value of this class.
      *
      * This method can be used to check the current concrete instance type.

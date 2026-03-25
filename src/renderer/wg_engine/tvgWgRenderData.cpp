@@ -34,6 +34,18 @@
 
 void WgImageData::update(WgContext& context, const RenderSurface* surface, FilterMethod filter)
 {
+    // NSEQ patch: this WgImageData may be a POOLED WgRenderDataPicture that last
+    // showed a BORROWED external texture (loadExternal / setExternal). `texture`
+    // then points at a handle we do NOT own; allocateTexture() below would
+    // releaseTexture()/overwrite it (a resize destroys a still-referenced app
+    // texture → null-device deref in Dawn CreateTextureView). Drop the borrow
+    // first — forget the handle, keep ownership with the app.
+    if (external) {
+        context.layouts.releaseBindGroup(bindGroup);
+        context.releaseTextureView(textureView);
+        texture = {}; textureView = {}; bindGroup = {};
+        external = false;
+    }
     // get appropriate texture format from color space
     WGPUTextureFormat texFormat = WGPUTextureFormat_BGRA8Unorm;
     if (surface->cs == ColorSpace::ABGR8888S)
@@ -56,6 +68,14 @@ void WgImageData::update(WgContext& context, const RenderSurface* surface, Filte
 
 void WgImageData::update(WgContext& context, const Fill* fill)
 {
+    // NSEQ patch: see the RenderSurface overload — a pooled render-data reused for
+    // a gradient must not release/overwrite a borrowed external texture.
+    if (external) {
+        context.layouts.releaseBindGroup(bindGroup);
+        context.releaseTextureView(textureView);
+        texture = {}; textureView = {}; bindGroup = {};
+        external = false;
+    }
     // compute gradient data
     WgShaderTypeGradientData gradientData;
     gradientData.update(fill);
@@ -76,11 +96,36 @@ void WgImageData::update(WgContext& context, const Fill* fill)
 };
 
 
+void WgImageData::setExternal(WgContext& context, WGPUTexture extTexture, uint32_t w, uint32_t h)
+{
+    // Release previous (only if we own it)
+    if (!external) {
+        context.layouts.releaseBindGroup(bindGroup);
+        context.releaseTextureView(textureView);
+        context.releaseTexture(texture);
+    } else {
+        context.layouts.releaseBindGroup(bindGroup);
+        context.releaseTextureView(textureView);
+    }
+    // Reference external texture (don't own it)
+    texture = extTexture;
+    external = true;
+    textureView = context.createTextureView(texture);
+    bindGroup = context.layouts.createBindGroupTexSampled(context.samplerLinearClamp, textureView);
+}
+
+
 void WgImageData::release(WgContext& context)
 {
     context.layouts.releaseBindGroup(bindGroup);
     context.releaseTextureView(textureView);
-    context.releaseTexture(texture);
+    if (!external) {
+        context.releaseTexture(texture);
+    }
+    texture = {};
+    textureView = {};
+    bindGroup = {};
+    external = false;
 };
 
 //***********************************************************************
@@ -307,6 +352,13 @@ void WgRenderDataPicture::updateSurface(WgContext& context, const RenderSurface*
 {
     meshData.imageBox(surface->w, surface->h, transform);
     if (updateTexture) imageData.update(context, surface, filter);
+}
+
+
+void WgRenderDataPicture::updateExternalTexture(WgContext& context, WGPUTexture extTexture, uint32_t w, uint32_t h, const Matrix& transform)
+{
+    meshData.imageBox(w, h, transform);
+    imageData.setExternal(context, extTexture, w, h);
 }
 
 

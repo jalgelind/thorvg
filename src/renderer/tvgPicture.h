@@ -68,6 +68,8 @@ struct PictureImpl : Picture
     float w = 0, h = 0;
     FilterMethod filter = FilterMethod::Bilinear;
     bool resizing = false;
+    void* externalTexture = nullptr;  //native GPU texture (WGPUTexture)
+    uint32_t extW = 0, extH = 0;
 
     PictureImpl() : impl(Paint::Impl(this))
     {
@@ -92,7 +94,11 @@ struct PictureImpl : Picture
 
         auto pivot = Point{-origin.x * float(w), -origin.y * float(h)};
 
-        if (bitmap) {
+        if (externalTexture) {
+            //External GPU texture — no pixel upload needed
+            auto m = transform * Matrix{1, 0, pivot.x, 0, 1, pivot.y, 0, 0, 1};
+            impl.rd = renderer->prepare(externalTexture, extW, extH, impl.rd, m, clips, opacity, flag);
+        } else if (bitmap) {
             //Overriding Transformation by the desired image size
             auto sx = w / loader->w;
             auto sy = h / loader->h;
@@ -294,7 +300,11 @@ struct PictureImpl : Picture
     {
         auto ret = true;
 
-        if (bitmap) {
+        //NSEQ patch (eccb56ee): an external-texture picture also renders as an image.
+        //update() sets impl.rd via prepare(externalTexture,...); render() must dispatch it
+        //to renderImage too, else the paint is prepared but never drawn (a thorvg bump
+        //narrowed this branch from `impl.rd` to `bitmap`, silently dropping external pictures).
+        if (bitmap || externalTexture) {
             renderer->blend(impl.blendMethod);
             return renderer->renderImage(impl.rd);
         } else if (vector) {
