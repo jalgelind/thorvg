@@ -101,20 +101,19 @@ bool WgRenderer::surfaceConfigure(WGPUSurface surface, WgContext& context, uint3
     this->surface = surface;
     if (width == 0 || height == 0 || !surface) return false;
 
-    // setup surface configuration
+    // setup surface configuration.
+    // Mailbox (non-blocking, no tearing) instead of Fifo: Fifo's present blocks the calling
+    // thread until a vsync slot frees up, and on macOS that block can reach ~1s when the
+    // Metal drawable pipeline stalls — freezing the whole UI thread (so trackpad magnify
+    // events coalesce and the comic pinch "only zooms on release"). Mailbox replaces the
+    // queued frame instead of blocking. (js-seq local patch.)
     WGPUSurfaceConfiguration surfaceConfiguration {
         .device = context.device,
         .format = context.format,
         .usage = WGPUTextureUsage_RenderAttachment,
         .width = width,
         .height = height,
-    #ifdef __EMSCRIPTEN__
-        .alphaMode = WGPUCompositeAlphaMode_Premultiplied,
-        .presentMode = WGPUPresentMode_Fifo
-    #elif __linux__
-    #else
-        .presentMode = WGPUPresentMode_Immediate
-    #endif
+        .presentMode = WGPUPresentMode_Mailbox
     };
     wgpuSurfaceConfigure(surface, &surfaceConfiguration);
     return true;
@@ -401,8 +400,9 @@ bool WgRenderer::sync()
     if (!dstTexture) return false;
 
     // insure that surface and offscreen target have the same size
-    if ((wgpuTextureGetWidth(dstTexture) == mRenderTargetRoot.width) && 
-        (wgpuTextureGetHeight(dstTexture) == mRenderTargetRoot.height)) {
+    auto texW = wgpuTextureGetWidth(dstTexture);
+    auto texH = wgpuTextureGetHeight(dstTexture);
+    if ((texW == mRenderTargetRoot.width) && (texH == mRenderTargetRoot.height)) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
         // show root offscreen buffer
@@ -410,6 +410,14 @@ bool WgRenderer::sync()
         mContext.submitCommandEncoder(commandEncoder);
         mContext.releaseCommandEncoder(commandEncoder);
         mContext.releaseTextureView(dstTextureView);
+    } else {
+        fprintf(stderr, "[WG_RENDERER] sync: size mismatch tex=%ux%u root=%ux%u\n",
+            texW, texH, mRenderTargetRoot.width, mRenderTargetRoot.height);
+    }
+
+    // Present the surface — required by Dawn (wgpu-native presents implicitly)
+    if (surface) {
+        wgpuSurfacePresent(surface);
     }
 
     return true;
