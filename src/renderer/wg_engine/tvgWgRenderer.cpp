@@ -102,20 +102,17 @@ bool WgRenderer::surfaceConfigure(WGPUSurface surface, WgContext& context, uint3
     if (width == 0 || height == 0 || !surface) return false;
 
     // setup surface configuration
+    // Use BGRA8Unorm (Metal's native format) and Fifo (universally supported vsync mode)
     WGPUSurfaceConfiguration surfaceConfiguration {
         .device = context.device,
         .format = context.format,
         .usage = WGPUTextureUsage_RenderAttachment,
         .width = width,
         .height = height,
-    #ifdef __EMSCRIPTEN__
-        .alphaMode = WGPUCompositeAlphaMode_Premultiplied,
         .presentMode = WGPUPresentMode_Fifo
-    #elif __linux__
-    #else
-        .presentMode = WGPUPresentMode_Immediate
-    #endif
     };
+    fprintf(stderr, "[WG_RENDERER] surfaceConfigure: %ux%u format=%d device=%p\n",
+        width, height, (int)context.format, (void*)context.device);
     wgpuSurfaceConfigure(surface, &surfaceConfiguration);
     return true;
 }
@@ -386,7 +383,10 @@ bool WgRenderer::clear()
 
 bool WgRenderer::sync()
 {
-    if (mContext.invalid()) return false;
+    if (mContext.invalid()) {
+        fprintf(stderr, "[WG_RENDERER] sync: context invalid (device=%p instance=%p)\n", (void*)mContext.device, (void*)mContext.instance);
+        return false;
+    }
 
     disposeObjects();
 
@@ -396,13 +396,17 @@ bool WgRenderer::sync()
         releaseSurfaceTexture();
         wgpuSurfaceGetCurrentTexture(surface, &surfaceTexture);
         dstTexture = surfaceTexture.texture;
+        if (!dstTexture) {
+            fprintf(stderr, "[WG_RENDERER] sync: surface texture is null (status=%d)\n", (int)surfaceTexture.status);
+        }
     }
 
     if (!dstTexture) return false;
 
     // insure that surface and offscreen target have the same size
-    if ((wgpuTextureGetWidth(dstTexture) == mRenderTargetRoot.width) &&
-        (wgpuTextureGetHeight(dstTexture) == mRenderTargetRoot.height)) {
+    auto texW = wgpuTextureGetWidth(dstTexture);
+    auto texH = wgpuTextureGetHeight(dstTexture);
+    if ((texW == mRenderTargetRoot.width) && (texH == mRenderTargetRoot.height)) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
         // show root offscreen buffer
@@ -410,6 +414,9 @@ bool WgRenderer::sync()
         mContext.submitCommandEncoder(commandEncoder);
         mContext.releaseCommandEncoder(commandEncoder);
         mContext.releaseTextureView(dstTextureView);
+    } else {
+        fprintf(stderr, "[WG_RENDERER] sync: size mismatch tex=%ux%u root=%ux%u\n",
+            texW, texH, mRenderTargetRoot.width, mRenderTargetRoot.height);
     }
 
     // Present the surface — required by Dawn (wgpu-native presents implicitly)
