@@ -27,7 +27,7 @@ source_file = [
 
 wgpu_dep = []
 if host_machine.system() != 'emscripten'
-    wgpu_dep = dependency('wgpu_native')
+    wgpu_dep = dependency('wgpu_native', required: false)
 endif
 
 engine_dep += [declare_dependency(
