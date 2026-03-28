@@ -150,402 +150,200 @@ WGPUDepthStencilState WgPipelines::makeDepthStencilState(
 
 void WgPipelines::initialize(WgContext& context)
 {
-    // common pipeline settings
-    const WGPUVertexAttribute vertexAttributePos { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 };
-    const WGPUVertexAttribute vertexAttributeColor { .format = WGPUVertexFormat_Float32x4, .offset = 0, .shaderLocation = 1 };
-    const WGPUVertexAttribute vertexAttributeTex { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 1 };
-    const WGPUVertexAttribute vertexAttributesPos[] { vertexAttributePos };
-    const WGPUVertexAttribute vertexAttributesColor[] { vertexAttributeColor };
-    const WGPUVertexAttribute vertexAttributesTex[] { vertexAttributeTex };
-    const WGPUVertexBufferLayout vertexBufferLayoutPos { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesPos };
-    // Solid path: one vec4 color per draw from an instance-rate aux vertex slot.
-    const WGPUVertexBufferLayout vertexBufferLayoutColor { .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 16, .attributeCount = 1, .attributes = vertexAttributesColor };
-    const WGPUVertexBufferLayout vertexBufferLayoutTex { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesTex };
-    const WGPUVertexBufferLayout vertexBufferLayoutsSolid[] { vertexBufferLayoutPos, vertexBufferLayoutColor };
-    const WGPUVertexBufferLayout vertexBufferLayoutsShape[] { vertexBufferLayoutPos };
-    const WGPUVertexBufferLayout vertexBufferLayoutsImage[] { vertexBufferLayoutPos, vertexBufferLayoutTex };
-    const WGPUMultisampleState multisampleState   { .count = 4, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
-    const WGPUMultisampleState multisampleStateX1 { .count = 1, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
-    const WGPUTextureFormat offscreenTargetFormat = WGPUTextureFormat_RGBA8Unorm;
+    device_ = context.device;
+    offscreenFormat_ = WGPUTextureFormat_RGBA8Unorm;
 
-    // blend states
+    // Vertex attributes (stored as members — referenced by vertex buffer layouts)
+    vtxAttrPos_   = { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 };
+    vtxAttrColor_ = { .format = WGPUVertexFormat_Float32x4, .offset = 0, .shaderLocation = 1 };
+    vtxAttrTex_   = { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 1 };
+
+    WGPUVertexBufferLayout vertexBufferLayoutPos { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = &vtxAttrPos_ };
+    WGPUVertexBufferLayout vertexBufferLayoutColor { .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 16, .attributeCount = 1, .attributes = &vtxAttrColor_ };
+    WGPUVertexBufferLayout vertexBufferLayoutTex { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = &vtxAttrTex_ };
+    // Store vertex buffer layouts for deferred pipeline creation
+    vblSolid_[0] = vertexBufferLayoutPos; vblSolid_[1] = vertexBufferLayoutColor;
+    vblShape_[0] = vertexBufferLayoutPos;
+    vblImage_[0] = vertexBufferLayoutPos; vblImage_[1] = vertexBufferLayoutTex;
+
+    // Multisample + blend states (stored for deferred creation)
+    multisampleState_   = { .count = 4, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
+    multisampleStateX1_ = { .count = 1, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
+
     WGPUBlendComponent blendComponentSrc { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_Zero };
     WGPUBlendComponent blendComponentNrm { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha };
-    const WGPUBlendState blendStateSrc { .color = blendComponentSrc, .alpha = blendComponentSrc };
-    const WGPUBlendState blendStateNrm { .color = blendComponentNrm, .alpha = blendComponentNrm };
+    blendStateSrc_ = { .color = blendComponentSrc, .alpha = blendComponentSrc };
+    blendStateNrm_ = { .color = blendComponentNrm, .alpha = blendComponentNrm };
+
+    // Depth/stencil states (stored for deferred creation)
+    depthStencilStateShape_ = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
+    depthStencilStateScene_ = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_Always, WGPUStencilOperation_Zero);
+    clipDepthStencilStates_[CopyStencilToDepth]      = makeDepthStencilState(WGPUCompareFunction_Always,  WGPUOptionalBool_True,  WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
+    clipDepthStencilStates_[CopyStencilToDepthInterm] = makeDepthStencilState(WGPUCompareFunction_Greater, WGPUOptionalBool_True,  WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
+    clipDepthStencilStates_[CopyDepthToStencil]       = makeDepthStencilState(WGPUCompareFunction_Equal,   WGPUOptionalBool_False, WGPUCompareFunction_Always,   WGPUStencilOperation_Replace);
+    clipDepthStencilStates_[MergeDepthStencil]        = makeDepthStencilState(WGPUCompareFunction_Equal,   WGPUOptionalBool_True,  WGPUCompareFunction_Always,   WGPUStencilOperation_Keep);
+    clipDepthStencilStates_[ClearDepth]               = makeDepthStencilState(WGPUCompareFunction_Always,  WGPUOptionalBool_True,  WGPUCompareFunction_Always,   WGPUStencilOperation_Keep);
 
     const WgBindGroupLayouts& layouts = context.layouts;
-    // bind group layouts helpers
     const WGPUBindGroupLayout bindGroupLayoutsStencil[] { layouts.layoutBuffer1Un };
     const WGPUBindGroupLayout bindGroupLayoutsDepth[]   { layouts.layoutBuffer1Un, layouts.layoutBuffer1Un };
-    // bind group layouts normal blend
     const WGPUBindGroupLayout bindGroupLayoutsSolid[]    { layouts.layoutBuffer1Un };
     const WGPUBindGroupLayout bindGroupLayoutsGradient[] { layouts.layoutBuffer1Un, layouts.layoutBuffer1Un, layouts.layoutTexSampled };
     const WGPUBindGroupLayout bindGroupLayoutsImage[]    { layouts.layoutBuffer1Un, layouts.layoutBuffer1Un, layouts.layoutTexSampled };
     const WGPUBindGroupLayout bindGroupLayoutsScene[]    { layouts.layoutTexSampled, layouts.layoutBuffer1Un };
-    // bind group layouts custom blend
     const WGPUBindGroupLayout bindGroupLayoutsSolidBlend[]    { layouts.layoutBuffer1Un, layouts.layoutTexSampled };
     const WGPUBindGroupLayout bindGroupLayoutsGradientBlend[] { layouts.layoutBuffer1Un, layouts.layoutBuffer1Un, layouts.layoutTexSampled, layouts.layoutTexSampled };
     const WGPUBindGroupLayout bindGroupLayoutsImageBlend[]    { layouts.layoutBuffer1Un, layouts.layoutBuffer1Un, layouts.layoutTexSampled, layouts.layoutTexSampled };
     const WGPUBindGroupLayout bindGroupLayoutsSceneBlend[]    { layouts.layoutTexSampled, layouts.layoutTexSampled, layouts.layoutBuffer1Un };
-    // bind group layouts scene compose
     const WGPUBindGroupLayout bindGroupLayoutsSceneCompose[] { layouts.layoutTexSampled, layouts.layoutTexSampled };
-    // bind group layouts blit
     const WGPUBindGroupLayout bindGroupLayoutsBlit[] { layouts.layoutTexSampled };
-    // bind group layouts effects
     const WGPUBindGroupLayout bindGroupLayoutsShadow[] { layouts.layoutTexSampled, layouts.layoutTexSampled, layouts.layoutBuffer1Un };
     const WGPUBindGroupLayout bindGroupLayoutsEffects[] { layouts.layoutTexSampled, layouts.layoutBuffer1Un };
 
-    // depth stencil state markup
+    // Shaders (cheap — no GPU compilation, just WGSL parsing)
+    char shaderSourceBuff[16384]{};
+    shader_stencil = createShaderModule(device_, "The shader stencil", cShaderSrc_Stencil);
+    shader_depth   = createShaderModule(device_, "The shader depth", cShaderSrc_Depth);
+    shader_solid  = createShaderModule(device_, "The shader solid",  cShaderSrc_Solid);
+    shader_radial = createShaderModule(device_, "The shader radial", cShaderSrc_Radial);
+    shader_linear = createShaderModule(device_, "The shader linear", cShaderSrc_Linear);
+    shader_image  = createShaderModule(device_, "The shader image",  cShaderSrc_Image);
+    shader_scene  = createShaderModule(device_, "The shader scene",  cShaderSrc_Scene);
+    shader_solid_blend  = createShaderModule(device_, "The shader blend solid",  strcat(strcpy(shaderSourceBuff, cShaderSrc_Solid_Blend), cShaderSrc_BlendFuncs));
+    shader_linear_blend = createShaderModule(device_, "The shader blend linear", strcat(strcpy(shaderSourceBuff, cShaderSrc_Linear_Blend), cShaderSrc_BlendFuncs));
+    shader_radial_blend = createShaderModule(device_, "The shader blend radial", strcat(strcpy(shaderSourceBuff, cShaderSrc_Radial_Blend), cShaderSrc_BlendFuncs));
+    shader_image_blend  = createShaderModule(device_, "The shader blend image",  strcat(strcpy(shaderSourceBuff, cShaderSrc_Image_Blend), cShaderSrc_BlendFuncs));
+    shader_scene_blend  = createShaderModule(device_, "The shader blend scene",  strcat(strcpy(shaderSourceBuff, cShaderSrc_Scene_Blend), cShaderSrc_BlendFuncs));
+    shader_scene_compose = createShaderModule(device_, "The shader scene composition", cShaderSrc_Scene_Compose);
+    shader_blit = createShaderModule(device_, "The shader blit", cShaderSrc_Blit);
+    shader_shadow = createShaderModule(device_, "The shader effects", cShaderSrc_Shadow);
+    shader_effects = createShaderModule(device_, "The shader effects", cShaderSrc_Effects);
+
+    // Layouts (cheap — no GPU compilation)
+    layout_stencil = createPipelineLayout(device_, bindGroupLayoutsStencil, 1);
+    layout_depth = createPipelineLayout(device_, bindGroupLayoutsDepth, 2);
+    layout_solid    = createPipelineLayout(device_, bindGroupLayoutsSolid, 1);
+    layout_gradient = createPipelineLayout(device_, bindGroupLayoutsGradient, 3);
+    layout_image    = createPipelineLayout(device_, bindGroupLayoutsImage, 3);
+    layout_scene    = createPipelineLayout(device_, bindGroupLayoutsScene, 2);
+    layout_solid_blend    = createPipelineLayout(device_, bindGroupLayoutsSolidBlend, 2);
+    layout_gradient_blend = createPipelineLayout(device_, bindGroupLayoutsGradientBlend, 4);
+    layout_image_blend    = createPipelineLayout(device_, bindGroupLayoutsImageBlend, 4);
+    layout_scene_blend    = createPipelineLayout(device_, bindGroupLayoutsSceneBlend, 3);
+    layout_scene_compose = createPipelineLayout(device_, bindGroupLayoutsSceneCompose, 2);
+    layout_blit = createPipelineLayout(device_, bindGroupLayoutsBlit, 1);
+    layout_shadow = createPipelineLayout(device_, bindGroupLayoutsShadow, 3);
+    layout_effects = createPipelineLayout(device_, bindGroupLayoutsEffects, 2);
+
+    // ---- Eager pipelines (12 total — needed for first frame) ----
     const WGPUDepthStencilState depthStencilStateNonZero = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_Always, WGPUStencilOperation_IncrementWrap, WGPUCompareFunction_Always, WGPUStencilOperation_DecrementWrap);
     const WGPUDepthStencilState depthStencilStateEvenOdd = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_Always, WGPUStencilOperation_Invert);
     const WGPUDepthStencilState depthStencilStateDirect  = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_Always, WGPUStencilOperation_Replace);
-    // depth stencil state clip path
-    const WGPUDepthStencilState depthStencilStateCopyStencilToDepth    = makeDepthStencilState(WGPUCompareFunction_Always,  WGPUOptionalBool_True,  WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
-    const WGPUDepthStencilState depthStencilStateCopyStencilToDepthInt = makeDepthStencilState(WGPUCompareFunction_Greater, WGPUOptionalBool_True,  WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
-    const WGPUDepthStencilState depthStencilStateCopyDepthToStencil    = makeDepthStencilState(WGPUCompareFunction_Equal,   WGPUOptionalBool_False, WGPUCompareFunction_Always,   WGPUStencilOperation_Replace);
-    const WGPUDepthStencilState depthStencilStateMergeDepthStencil     = makeDepthStencilState(WGPUCompareFunction_Equal,   WGPUOptionalBool_True,  WGPUCompareFunction_Always,   WGPUStencilOperation_Keep);
-    const WGPUDepthStencilState depthStencilStateClearDepth            = makeDepthStencilState(WGPUCompareFunction_Always,  WGPUOptionalBool_True,  WGPUCompareFunction_Always,   WGPUStencilOperation_Keep);
-    // depth stencil state blend, compose and blit
-    const WGPUDepthStencilState depthStencilStateShape = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False,  WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
-    const WGPUDepthStencilState depthStencilStateScene = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False,  WGPUCompareFunction_Always, WGPUStencilOperation_Zero);
-    // shaders
-    char shaderSourceBuff[16384]{};
-    shader_stencil = createShaderModule(context.device, "The shader stencil", cShaderSrc_Stencil);
-    shader_depth   = createShaderModule(context.device, "The shader depth", cShaderSrc_Depth);
-    // shader normal blend
-    shader_solid  = createShaderModule(context.device, "The shader solid",  cShaderSrc_Solid);
-    shader_radial = createShaderModule(context.device, "The shader radial", cShaderSrc_Radial);
-    shader_linear = createShaderModule(context.device, "The shader linear", cShaderSrc_Linear);
-    shader_image  = createShaderModule(context.device, "The shader image",  cShaderSrc_Image);
-    shader_scene  = createShaderModule(context.device, "The shader scene",  cShaderSrc_Scene);
-    // shader custom blend
-    shader_solid_blend  = createShaderModule(context.device, "The shader blend solid",  strcat(strcpy(shaderSourceBuff, cShaderSrc_Solid_Blend), cShaderSrc_BlendFuncs));
-    shader_linear_blend = createShaderModule(context.device, "The shader blend linear", strcat(strcpy(shaderSourceBuff, cShaderSrc_Linear_Blend), cShaderSrc_BlendFuncs));
-    shader_radial_blend = createShaderModule(context.device, "The shader blend radial", strcat(strcpy(shaderSourceBuff, cShaderSrc_Radial_Blend), cShaderSrc_BlendFuncs));
-    shader_image_blend  = createShaderModule(context.device, "The shader blend image",  strcat(strcpy(shaderSourceBuff, cShaderSrc_Image_Blend), cShaderSrc_BlendFuncs));
-    shader_scene_blend  = createShaderModule(context.device, "The shader blend scene",  strcat(strcpy(shaderSourceBuff, cShaderSrc_Scene_Blend), cShaderSrc_BlendFuncs));
-    // shader compose
-    shader_scene_compose = createShaderModule(context.device, "The shader scene composition", cShaderSrc_Scene_Compose);
-    // shader blit
-    shader_blit = createShaderModule(context.device, "The shader blit", cShaderSrc_Blit);
-    // shader effects
-    shader_shadow = createShaderModule(context.device, "The shader effects", cShaderSrc_Shadow);
-    shader_effects = createShaderModule(context.device, "The shader effects", cShaderSrc_Effects);
 
-    // layouts
-    layout_stencil = createPipelineLayout(context.device, bindGroupLayoutsStencil, 1);
-    layout_depth = createPipelineLayout(context.device, bindGroupLayoutsDepth, 2);
-    // layouts normal blend
-    layout_solid    = createPipelineLayout(context.device, bindGroupLayoutsSolid, 1);
-    layout_gradient = createPipelineLayout(context.device, bindGroupLayoutsGradient, 3);
-    layout_image    = createPipelineLayout(context.device, bindGroupLayoutsImage, 3);
-    layout_scene    = createPipelineLayout(context.device, bindGroupLayoutsScene, 2);
-    // layouts custom blend
-    layout_solid_blend    = createPipelineLayout(context.device, bindGroupLayoutsSolidBlend, 2);
-    layout_gradient_blend = createPipelineLayout(context.device, bindGroupLayoutsGradientBlend, 4);
-    layout_image_blend    = createPipelineLayout(context.device, bindGroupLayoutsImageBlend, 4);
-    layout_scene_blend    = createPipelineLayout(context.device, bindGroupLayoutsSceneBlend, 3);
-    // layout compose
-    layout_scene_compose = createPipelineLayout(context.device, bindGroupLayoutsSceneCompose, 2);
-    // layout blit
-    layout_blit = createPipelineLayout(context.device, bindGroupLayoutsBlit, 1);
-    // layout effects
-    layout_shadow = createPipelineLayout(context.device, bindGroupLayoutsShadow, 3);
-    layout_effects = createPipelineLayout(context.device, bindGroupLayoutsEffects, 2);
+    nonzero = createRenderPipeline(device_, "The render pipeline nonzero", shader_stencil, "vs_main", "fs_main", layout_stencil, vblShape_, 1, WGPUColorWriteMask_None, offscreenFormat_, blendStateSrc_, depthStencilStateNonZero, multisampleState_);
+    evenodd = createRenderPipeline(device_, "The render pipeline even-odd", shader_stencil, "vs_main", "fs_main", layout_stencil, vblShape_, 1, WGPUColorWriteMask_None, offscreenFormat_, blendStateSrc_, depthStencilStateEvenOdd, multisampleState_);
+    direct  = createRenderPipeline(device_, "The render pipeline direct", shader_stencil, "vs_main", "fs_main", layout_stencil, vblShape_, 1, WGPUColorWriteMask_None, offscreenFormat_, blendStateSrc_, depthStencilStateDirect, multisampleState_);
+    solid      = createRenderPipeline(device_, "The render pipeline solid", shader_solid, "vs_main", "fs_main", layout_solid, vblSolid_, 2, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateShape_, multisampleState_);
+    radial     = createRenderPipeline(device_, "The render pipeline radial", shader_radial, "vs_main", "fs_main", layout_gradient, vblShape_, 1, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateShape_, multisampleState_);
+    linear     = createRenderPipeline(device_, "The render pipeline linear", shader_linear, "vs_main", "fs_main", layout_gradient, vblShape_, 1, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateShape_, multisampleState_);
+    solid_conv  = createRenderPipeline(device_, "The render pipeline solid convex", shader_solid, "vs_main", "fs_main", layout_solid, vblSolid_, 2, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateScene_, multisampleState_);
+    radial_conv = createRenderPipeline(device_, "The render pipeline radial convex", shader_radial, "vs_main", "fs_main", layout_gradient, vblShape_, 1, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateScene_, multisampleState_);
+    linear_conv = createRenderPipeline(device_, "The render pipeline linear convex", shader_linear, "vs_main", "fs_main", layout_gradient, vblShape_, 1, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateScene_, multisampleState_);
+    image  = createRenderPipeline(device_, "The render pipeline image", shader_image, "vs_main", "fs_main", layout_image, vblImage_, 2, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateShape_, multisampleState_);
+    scene  = createRenderPipeline(device_, "The render pipeline scene", shader_scene, "vs_main", "fs_main", layout_scene, vblImage_, 2, WGPUColorWriteMask_All, offscreenFormat_, blendStateNrm_, depthStencilStateScene_, multisampleState_);
+    blit   = createRenderPipeline(device_, "The render pipeline blit", shader_blit, "vs_main", "fs_main", layout_blit, vblImage_, 2, WGPUColorWriteMask_All, context.format, blendStateSrc_, depthStencilStateScene_, multisampleStateX1_);
 
-    // render pipeline nonzero
-    nonzero = createRenderPipeline(
-        context.device, "The render pipeline nonzero",
-        shader_stencil, "vs_main", "fs_main",
-        layout_stencil, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateNonZero, multisampleState);
-    // render pipeline even-odd
-    evenodd = createRenderPipeline(
-        context.device, "The render pipeline even-odd",
-        shader_stencil, "vs_main", "fs_main",
-        layout_stencil, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateEvenOdd, multisampleState);
-    // render pipeline direct
-    direct = createRenderPipeline(
-        context.device, "The render pipeline direct",
-        shader_stencil, "vs_main", "fs_main",
-        layout_stencil, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateDirect, multisampleState);
+    // ---- Lazy pipelines (112 total — created on first use via accessors) ----
+    // Blend[90], compose[11], clip[5], effects[6] are left zero-initialized.
+}
 
-    // render pipeline copy stencil to depth (front)
-    copy_stencil_to_depth = createRenderPipeline(
-        context.device, "The render pipeline copy stencil to depth front",
-        shader_depth, "vs_main", "fs_main",
-        layout_depth, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateCopyStencilToDepth , multisampleState);
-    // render pipeline copy stencil to depth (intermediate)
-    copy_stencil_to_depth_interm = createRenderPipeline(
-        context.device, "The render pipeline copy stencil to depth intermediate",
-        shader_depth, "vs_main", "fs_main",
-        layout_depth, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateCopyStencilToDepthInt, multisampleState);
-    // render pipeline depth to stencil
-    copy_depth_to_stencil = createRenderPipeline(
-        context.device, "The render pipeline depth to stencil",
-        shader_depth, "vs_main", "fs_main",
-        layout_depth, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateCopyDepthToStencil, multisampleState);
-    // render pipeline merge depth with stencil
-    merge_depth_stencil = createRenderPipeline(
-        context.device, "The render pipeline merge depth with stencil",
-        shader_depth, "vs_main", "fs_main",
-        layout_depth, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateMergeDepthStencil, multisampleState);
-    // render pipeline clear depth
-    clear_depth = createRenderPipeline(
-        context.device, "The render pipeline clear depth",
-        shader_depth, "vs_main", "fs_main",
-        layout_depth, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_None, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateClearDepth, multisampleState);
 
-    // render pipeline solid
-    solid = createRenderPipeline(
-        context.device, "The render pipeline solid",
-        shader_solid, "vs_main", "fs_main",
-        layout_solid, vertexBufferLayoutsSolid, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateShape, multisampleState);
-    // render pipeline radial
-    radial = createRenderPipeline(
-        context.device, "The render pipeline radial",
-        shader_radial, "vs_main", "fs_main",
-        layout_gradient, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateShape, multisampleState);
-    // render pipeline linear
-    linear = createRenderPipeline(
-        context.device, "The render pipeline linear",
-        shader_linear, "vs_main", "fs_main",
-        layout_gradient, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateShape, multisampleState);
-    // render pipeline solid (no stencil)
-    solid_conv = createRenderPipeline(
-        context.device, "The render pipeline solid",
-        shader_solid, "vs_main", "fs_main",
-        layout_solid, vertexBufferLayoutsSolid, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateScene, multisampleState);
-    // render pipeline radial (no stencil)
-    radial_conv = createRenderPipeline(
-        context.device, "The render pipeline radial",
-        shader_radial, "vs_main", "fs_main",
-        layout_gradient, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateScene, multisampleState);
-    // render pipeline linear (no stencil)
-    linear_conv = createRenderPipeline(
-        context.device, "The render pipeline linear",
-        shader_linear, "vs_main", "fs_main",
-        layout_gradient, vertexBufferLayoutsShape, 1,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateScene, multisampleState);
-    // render pipeline image
-    image = createRenderPipeline(
-        context.device, "The render pipeline image",
-        shader_image, "vs_main", "fs_main",
-        layout_image, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateShape, multisampleState);
-    // render pipeline scene
-    scene = createRenderPipeline(
-        context.device, "The render pipeline scene",
-        shader_scene, "vs_main", "fs_main",
-        layout_scene, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
-        depthStencilStateScene, multisampleState);
+// --- Lazy pipeline accessors ---
 
-    // blend shader names
-    const char* shaderBlendNames[] {
-        "fs_main_Normal",
-        "fs_main_Multiply",
-        "fs_main_Screen",
-        "fs_main_Overlay",
-        "fs_main_Darken",
-        "fs_main_Lighten",
-        "fs_main_ColorDodge",
-        "fs_main_ColorBurn",
-        "fs_main_HardLight",
-        "fs_main_SoftLight",
-        "fs_main_Difference",
-        "fs_main_Exclusion",
-        "fs_main_Hue",
-        "fs_main_Saturation",
-        "fs_main_Color",
-        "fs_main_Luminosity",
-        "fs_main_Add",
-        "fs_main_Normal"  //TODO: a padding for reserved Hardmix.
-    };
+static const char* sBlendShaderNames[] {
+    "fs_main_Normal", "fs_main_Multiply", "fs_main_Screen", "fs_main_Overlay",
+    "fs_main_Darken", "fs_main_Lighten", "fs_main_ColorDodge", "fs_main_ColorBurn",
+    "fs_main_HardLight", "fs_main_SoftLight", "fs_main_Difference", "fs_main_Exclusion",
+    "fs_main_Hue", "fs_main_Saturation", "fs_main_Color", "fs_main_Luminosity",
+    "fs_main_Add", "fs_main_Normal" // padding for reserved Hardmix
+};
 
-    // render pipeline shape blend
-    for (uint32_t i = 0; i < 18; i++) {
-        // blend solid
-        solid_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline solid blend",
-            shader_solid_blend, "vs_main", shaderBlendNames[i],
-            layout_solid_blend, vertexBufferLayoutsSolid, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend radial
-        radial_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline radial blend",
-            shader_radial_blend, "vs_main", shaderBlendNames[i],
-            layout_gradient_blend, vertexBufferLayoutsShape, 1,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend linear
-        linear_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline linear blend",
-            shader_linear_blend, "vs_main", shaderBlendNames[i],
-            layout_gradient_blend, vertexBufferLayoutsShape, 1,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend image
-        image_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline image blend",
-            shader_image_blend, "vs_main", shaderBlendNames[i],
-            layout_image_blend, vertexBufferLayoutsImage, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend scene
-        scene_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline scene blend",
-            shader_scene_blend, "vs_main", shaderBlendNames[i],
-            layout_scene_blend, vertexBufferLayoutsImage, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateScene, multisampleState);
+WGPURenderPipeline WgPipelines::getBlendPipeline(uint32_t fillType, uint32_t blendIdx)
+{
+    auto& slot = blendPipelines_[fillType][blendIdx];
+    if (!slot) {
+        WGPUShaderModule shader{};
+        WGPUPipelineLayout layout{};
+        const WGPUVertexBufferLayout* vbl{};
+        uint32_t vblCount{};
+        switch (fillType) {
+            case Solid:  shader = shader_solid_blend;  layout = layout_solid_blend;    vbl = vblSolid_; vblCount = 2; break;
+            case Linear: shader = shader_linear_blend; layout = layout_gradient_blend; vbl = vblShape_; vblCount = 1; break;
+            case Radial: shader = shader_radial_blend; layout = layout_gradient_blend; vbl = vblShape_; vblCount = 1; break;
+            case Image:  shader = shader_image_blend;  layout = layout_image_blend;    vbl = vblImage_; vblCount = 2; break;
+            default:     shader = shader_scene_blend;  layout = layout_scene_blend;    vbl = vblImage_; vblCount = 2; break;
+        }
+        const auto& ds = (fillType == Scene) ? depthStencilStateScene_ : depthStencilStateShape_;
+        slot = createRenderPipeline(device_, "lazy blend", shader, "vs_main", sBlendShaderNames[blendIdx], layout, vbl, vblCount, WGPUColorWriteMask_All, offscreenFormat_, blendStateSrc_, ds, multisampleState_);
     }
+    return slot;
+}
 
-    // compose shader names
-    const char* shaderComposeNames[] {
-        "fs_main_None",
-        "fs_main_AlphaMask",
-        "fs_main_InvAlphaMask",
-        "fs_main_LumaMask",
-        "fs_main_InvLumaMask",
-        "fs_main_AddMask",
-        "fs_main_SubtractMask",
-        "fs_main_IntersectMask",
-        "fs_main_DifferenceMask",
-        "fs_main_LightenMask",
-        "fs_main_DarkenMask"
-    };
+static const char* sComposeShaderNames[] {
+    "fs_main_None", "fs_main_AlphaMask", "fs_main_InvAlphaMask", "fs_main_LumaMask",
+    "fs_main_InvLumaMask", "fs_main_AddMask", "fs_main_SubtractMask", "fs_main_IntersectMask",
+    "fs_main_DifferenceMask", "fs_main_LightenMask", "fs_main_DarkenMask"
+};
 
-    // compose shader blend states
-    const WGPUBlendState composeBlends[] {
-        blendStateNrm, // None
-        blendStateNrm, // AlphaMask
-        blendStateNrm, // InvAlphaMask
-        blendStateNrm, // LumaMask
-        blendStateNrm, // InvLumaMask
-        blendStateSrc, // AddMask
-        blendStateSrc, // SubtractMask
-        blendStateSrc, // IntersectMask
-        blendStateSrc, // DifferenceMask
-        blendStateSrc, // LightenMask
-        blendStateSrc  // DarkenMask
-    };
+static const bool sComposeUsesSrc[] { false, false, false, false, false, true, true, true, true, true, true };
 
-    // render pipeline scene composition
-    for (uint32_t i = 0; i < 11; i++) {
-        scene_compose[i] = createRenderPipeline(
-            context.device, "The render pipeline scene composition",
-            shader_scene_compose, "vs_main", shaderComposeNames[i],
-            layout_scene_compose, vertexBufferLayoutsImage, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, composeBlends[i],
-            depthStencilStateScene, multisampleState);
+WGPURenderPipeline WgPipelines::getComposePipeline(uint32_t idx)
+{
+    auto& slot = composePipelines_[idx];
+    if (!slot) {
+        const auto& bs = sComposeUsesSrc[idx] ? blendStateSrc_ : blendStateNrm_;
+        slot = createRenderPipeline(device_, "lazy compose", shader_scene_compose, "vs_main", sComposeShaderNames[idx], layout_scene_compose, vblImage_, 2, WGPUColorWriteMask_All, offscreenFormat_, bs, depthStencilStateScene_, multisampleState_);
     }
+    return slot;
+}
 
-    // render pipeline blit
-    blit = createRenderPipeline(
-        context.device, "The render pipeline blit",
-        shader_blit, "vs_main", "fs_main", 
-        layout_blit, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, context.format, blendStateSrc, // must be preferred screen pixel format
-        depthStencilStateScene, multisampleStateX1);
+WGPURenderPipeline WgPipelines::getClipPipeline(uint32_t op)
+{
+    auto& slot = clipPipelines_[op];
+    if (!slot) {
+        slot = createRenderPipeline(device_, "lazy clip", shader_depth, "vs_main", "fs_main", layout_depth, vblShape_, 1, WGPUColorWriteMask_None, offscreenFormat_, blendStateSrc_, clipDepthStencilStates_[op], multisampleState_);
+    }
+    return slot;
+}
 
-    // effects
-    dropshadow = createRenderPipeline(
-        context.device, "The render pipeline drop shadow",
-        shader_shadow, "vs_main", "fs_main_shadow",
-        layout_shadow, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateScene, multisampleStateX1);
+static const char* sEffectEntryPoints[] { "fs_main_vert", "fs_main_horz", "fs_main_shadow", "fs_main_fill", "fs_main_tint", "fs_main_tritone" };
 
-    gaussian_vert = createRenderPipeline(
-        context.device, "The render pipeline gaussian vert",
-        shader_effects, "vs_main", "fs_main_vert",
-        layout_effects, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateScene, multisampleStateX1);
-
-    gaussian_horz = createRenderPipeline(
-        context.device, "The render pipeline gaussian horz",
-        shader_effects, "vs_main", "fs_main_horz",
-        layout_effects, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateScene, multisampleStateX1);
-
-    fill_effect = createRenderPipeline(
-        context.device, "The render pipeline fill effect",
-        shader_effects, "vs_main", "fs_main_fill",
-        layout_effects, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateScene, multisampleStateX1);
-
-    tint_effect = createRenderPipeline(
-        context.device, "The render pipeline tint effect",
-        shader_effects, "vs_main", "fs_main_tint",
-        layout_effects, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateScene, multisampleStateX1);
-
-    tritone_effect = createRenderPipeline(
-        context.device, "The render pipeline tritone effect",
-        shader_effects, "vs_main", "fs_main_tritone",
-        layout_effects, vertexBufferLayoutsImage, 2,
-        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-        depthStencilStateScene, multisampleStateX1);
-
+WGPURenderPipeline WgPipelines::getEffectPipeline(uint32_t type)
+{
+    auto& slot = effectPipelines_[type];
+    if (!slot) {
+        WGPUShaderModule shader = (type == DropShadow) ? shader_shadow : shader_effects;
+        WGPUPipelineLayout layout = (type == DropShadow) ? layout_shadow : layout_effects;
+        slot = createRenderPipeline(device_, "lazy effect", shader, "vs_main", sEffectEntryPoints[type], layout, vblImage_, 2, WGPUColorWriteMask_All, offscreenFormat_, blendStateSrc_, depthStencilStateScene_, multisampleStateX1_);
+    }
+    return slot;
 }
 
 void WgPipelines::releaseGraphicHandles(WgContext& context)
 {
-    // pipeline effects
-    releaseRenderPipeline(tritone_effect);
-    releaseRenderPipeline(tint_effect);
-    releaseRenderPipeline(fill_effect);
-    releaseRenderPipeline(gaussian_horz);
-    releaseRenderPipeline(gaussian_vert);
-    releaseRenderPipeline(dropshadow);
-    // pipeline blit
+    // lazy effect pipelines
+    for (uint32_t i = 0; i < 6; i++)
+        releaseRenderPipeline(effectPipelines_[i]);
+    // pipeline blit (eager)
     releaseRenderPipeline(blit);
-    // pipelines compose
+    // lazy compose pipelines
     for (uint32_t i = 0; i < 11; i++)
-        releaseRenderPipeline(scene_compose[i]);
-    // pipelines custom blend
-    for (uint32_t i = 0; i < 18; i++) {
-        releaseRenderPipeline(scene_blend[i]);
-        releaseRenderPipeline(image_blend[i]);
-        releaseRenderPipeline(linear_blend[i]);
-        releaseRenderPipeline(radial_blend[i]);
-        releaseRenderPipeline(solid_blend[i]);
-    }
-    // pipelines normal blend
+        releaseRenderPipeline(composePipelines_[i]);
+    // lazy blend pipelines
+    for (uint32_t f = 0; f < 5; f++)
+        for (uint32_t i = 0; i < 18; i++)
+            releaseRenderPipeline(blendPipelines_[f][i]);
+    // eager normal blend pipelines
     releaseRenderPipeline(scene);
     releaseRenderPipeline(image);
     releaseRenderPipeline(linear_conv);
@@ -554,12 +352,9 @@ void WgPipelines::releaseGraphicHandles(WgContext& context)
     releaseRenderPipeline(linear);
     releaseRenderPipeline(radial);
     releaseRenderPipeline(solid);
-    // pipelines clip path markup
-    releaseRenderPipeline(clear_depth);
-    releaseRenderPipeline(merge_depth_stencil);
-    releaseRenderPipeline(copy_depth_to_stencil);
-    releaseRenderPipeline(copy_stencil_to_depth_interm);
-    releaseRenderPipeline(copy_stencil_to_depth);
+    // lazy clip path pipelines
+    for (uint32_t i = 0; i < 5; i++)
+        releaseRenderPipeline(clipPipelines_[i]);
     // pipelines stencil markup
     releaseRenderPipeline(direct);
     releaseRenderPipeline(evenodd);
