@@ -71,17 +71,11 @@ private:
     WGPUPipelineLayout layout_shadow{};
     WGPUPipelineLayout layout_effects{};
 public:
-    // pipelines stencil markup
+    // pipelines stencil markup (eager — created at init)
     WGPURenderPipeline nonzero{};
     WGPURenderPipeline evenodd{};
     WGPURenderPipeline direct{};
-    // pipelines clip path markup
-    WGPURenderPipeline copy_stencil_to_depth{};        // depth 0.50, clear stencil
-    WGPURenderPipeline copy_stencil_to_depth_interm{}; // depth 0.75, clear stencil
-    WGPURenderPipeline copy_depth_to_stencil{}; // depth 0.50 and 0.75, update stencil
-    WGPURenderPipeline merge_depth_stencil{};   // depth 0.75, update stencil
-    WGPURenderPipeline clear_depth{}; // depth 1.00, clear ctencil
-    // pipelines normal blend
+    // pipelines normal blend (eager)
     WGPURenderPipeline solid{};
     WGPURenderPipeline radial{};
     WGPURenderPipeline linear{};
@@ -90,24 +84,59 @@ public:
     WGPURenderPipeline linear_conv{}; // convex geometry (no stencil)
     WGPURenderPipeline image{};
     WGPURenderPipeline scene{};
-    // pipelines custom blend
-    WGPURenderPipeline solid_blend[18]{};
-    WGPURenderPipeline radial_blend[18]{};
-    WGPURenderPipeline linear_blend[18]{};
-    WGPURenderPipeline image_blend[18]{};
-    WGPURenderPipeline scene_blend[18]{};
-    // pipelines compose
-    WGPURenderPipeline scene_compose[11]{};
-    // pipeline blit
+    // pipeline blit (eager)
     WGPURenderPipeline blit{};
-    // effects
-    WGPURenderPipeline gaussian_vert{};
-    WGPURenderPipeline gaussian_horz{};
-    WGPURenderPipeline dropshadow{};
-    WGPURenderPipeline fill_effect{};
-    WGPURenderPipeline tint_effect{};
-    WGPURenderPipeline tritone_effect{};
+
+    // Lazy pipeline accessors — created on first use
+    WGPURenderPipeline getBlendPipeline(uint32_t fillType, uint32_t blendIdx);
+    WGPURenderPipeline getComposePipeline(uint32_t idx);
+    WGPURenderPipeline getClipPipeline(uint32_t op);
+    WGPURenderPipeline getEffectPipeline(uint32_t type);
+
+    // Clip pipeline operation indices
+    enum ClipOp : uint32_t {
+        CopyStencilToDepth = 0,
+        CopyStencilToDepthInterm = 1,
+        CopyDepthToStencil = 2,
+        MergeDepthStencil = 3,
+        ClearDepth = 4
+    };
+    // Effect pipeline type indices
+    enum EffectOp : uint32_t {
+        GaussianVert = 0, GaussianHorz = 1, DropShadow = 2,
+        FillEffect = 3, TintEffect = 4, TritoneEffect = 5
+    };
+    // Blend fill type indices
+    enum BlendFill : uint32_t {
+        Solid = 0, Linear = 1, Radial = 2, Image = 3, Scene = 4
+    };
+
 private:
+    // Lazy pipelines (created on first use via accessors above)
+    WGPURenderPipeline clipPipelines_[5]{};
+    WGPURenderPipeline blendPipelines_[5][18]{};   // [fillType][blendMode]
+    WGPURenderPipeline composePipelines_[11]{};
+    WGPURenderPipeline effectPipelines_[6]{};
+
+    // Stored creation params for deferred pipeline creation
+    WGPUDevice device_{};
+    WGPUTextureFormat offscreenFormat_{};
+    WGPUMultisampleState multisampleState_{};
+    WGPUMultisampleState multisampleStateX1_{};
+    WGPUBlendState blendStateSrc_{};
+    WGPUBlendState blendStateNrm_{};
+    WGPUDepthStencilState depthStencilStateShape_{};
+    WGPUDepthStencilState depthStencilStateScene_{};
+    WGPUDepthStencilState clipDepthStencilStates_[5]{};
+
+    // Vertex buffer layout storage (must persist for deferred creation)
+    WGPUVertexAttribute vtxAttrPos_{};
+    WGPUVertexAttribute vtxAttrColor_{};
+    WGPUVertexAttribute vtxAttrTex_{};
+    WGPUVertexBufferLayout vblSolid_[2]{};
+    WGPUVertexBufferLayout vblShape_[1]{};
+    WGPUVertexBufferLayout vblImage_[2]{};
+
     void releaseGraphicHandles(WgContext& context);
     WGPUShaderModule createShaderModule(WGPUDevice device, const char* label, const char* code);
     WGPUPipelineLayout createPipelineLayout(WGPUDevice device, const WGPUBindGroupLayout* bindGroupLayouts, const uint32_t bindGroupLayoutsCount);
