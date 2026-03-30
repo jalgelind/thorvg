@@ -32,7 +32,7 @@ void WgRenderTarget::initialize(WgContext& context, uint32_t width, uint32_t hei
     texViewMS = context.createTextureView(textureMS);
     bindGroupRead = context.layouts.createBindGroupStrorage1RO(texView);
     bindGroupWrite = context.layouts.createBindGroupStrorage1WO(texView);
-    bindGroupTexture = context.layouts.createBindGroupTexSampled(context.samplerNearestRepeat, texView);
+    bindGroupTexture = context.layouts.createBindGroupTexSampled(context.samplerLinearClamp, texView);
 }
 
 

@@ -43,11 +43,14 @@ private:
     WgStageBufferGeometry stageBufferGeometry{};
     WgStageBufferSolidColor stageBufferSolidColor{};
     WgStageBufferUniform<WgShaderTypePaintSettings> stageBufferPaint;
-    // global stencil/depth buffer handles
+    // global stencil/depth buffer handles (render resolution)
     WGPUTexture texDepthStencil{};
     WGPUTextureView texViewDepthStencil{};
     WGPUTexture texDepthStencilMS{};
     WGPUTextureView texViewDepthStencilMS{};
+    // blit-pass depth/stencil (surface resolution, may differ when supersampling)
+    WGPUTexture texDepthStencilBlit{};
+    WGPUTextureView texViewDepthStencilBlit{};
     // global view matrix handles
     WGPUBuffer bufferViewMat{};
     WGPUBindGroup bindGroupViewMat{};
@@ -105,11 +108,11 @@ private:
     void clearClipPath(WgContext& context, WgRenderDataPaint* paint);
     void updateViewMat(WgContext& context, uint32_t width, uint32_t height);
 public:
-    void initialize(WgContext& context, uint32_t width, uint32_t height);
+    void initialize(WgContext& context, uint32_t width, uint32_t height, uint32_t blitW = 0, uint32_t blitH = 0);
     void initPools(WgContext& context);
     void release(WgContext& context);
     void releasePools(WgContext& context);
-    void resize(WgContext& context, uint32_t width, uint32_t height);
+    void resize(WgContext& context, uint32_t width, uint32_t height, uint32_t blitW = 0, uint32_t blitH = 0);
 
     // render passes workflow
     void beginRenderPassMS(WGPUCommandEncoder encoder, WgRenderTarget* target, bool clear, WGPUColor clearColor = { 0.0, 0.0, 0.0, 0.0 });

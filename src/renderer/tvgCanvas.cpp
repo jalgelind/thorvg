@@ -250,7 +250,10 @@ Result WgCanvas::target(void* device, void* instance, void* target, uint32_t w, 
     if (!renderer) return Result::MemoryCorruption;
 
     if (!renderer->target((WGPUDevice)device, (WGPUInstance)instance, target, w, h, cs, type)) return Result::Unknown;
-    pImpl->vport = {{0, 0}, {(int32_t)w, (int32_t)h}};
+    // Viewport uses the internal render dimensions (scaled when supersampling)
+    auto rw = (int32_t)(w * renderer->renderScale);
+    auto rh = (int32_t)(h * renderer->renderScale);
+    pImpl->vport = {{0, 0}, {rw, rh}};
     renderer->viewport(pImpl->vport);
 
     //Paints must be updated again with this new target.
@@ -269,6 +272,15 @@ void* WgCanvas::device() const noexcept
     if (renderer) return renderer->nativeDevice();
 #endif
     return nullptr;
+}
+
+
+void WgCanvas::setRenderScale(uint32_t scale) noexcept
+{
+#ifdef THORVG_WG_RASTER_SUPPORT
+    auto renderer = static_cast<WgRenderer*>(pImpl->renderer);
+    if (renderer) renderer->setRenderScale(scale);
+#endif
 }
 
 

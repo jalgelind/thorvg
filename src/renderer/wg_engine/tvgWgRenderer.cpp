@@ -403,20 +403,14 @@ bool WgRenderer::sync()
 
     if (!dstTexture) return false;
 
-    // insure that surface and offscreen target have the same size
-    auto texW = wgpuTextureGetWidth(dstTexture);
-    auto texH = wgpuTextureGetHeight(dstTexture);
-    if ((texW == mRenderTargetRoot.width) && (texH == mRenderTargetRoot.height)) {
+    // Blit offscreen render target to surface (may downsample if supersampling)
+    {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
-        // show root offscreen buffer
         mCompositor.blit(mContext, commandEncoder, &mRenderTargetRoot, dstTextureView);
         mContext.submitCommandEncoder(commandEncoder);
         mContext.releaseCommandEncoder(commandEncoder);
         mContext.releaseTextureView(dstTextureView);
-    } else {
-        fprintf(stderr, "[WG_RENDERER] sync: size mismatch tex=%ux%u root=%ux%u\n",
-            texW, texH, mRenderTargetRoot.width, mRenderTargetRoot.height);
     }
 
     // Present the surface — required by Dawn (wgpu-native presents implicitly)
@@ -437,25 +431,31 @@ bool WgRenderer::target(WGPUDevice device, WGPUInstance instance, void* target, 
 
     if (w == 0 || h == 0) return false;
 
+    // Compute internal render dimensions (supersampling)
+    uint32_t rw = w * renderScale;
+    uint32_t rh = h * renderScale;
+    surfaceWidth = w;
+    surfaceHeight = h;
+
     // device or instance was changed, need to recreate all instances
     if ((mContext.device != device) || (mContext.instance != instance)) {
         release();
         mContext.initialize(instance, device);
-        mRenderTargetPool.initialize(mContext, w, h);
-        mRenderTargetRoot.initialize(mContext, w, h);
-        mCompositor.initialize(mContext, w, h);
+        mRenderTargetPool.initialize(mContext, rw, rh);
+        mRenderTargetRoot.initialize(mContext, rw, rh);
+        mCompositor.initialize(mContext, rw, rh, w, h);
 
     // update render targets dimensions
     } else if ((mTargetSurface.w != w) || (mTargetSurface.h != h) || (type == 0 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
         mRenderTargetPool.release(mContext);
         mRenderTargetRoot.release(mContext);
         clearTargets();
-        mRenderTargetPool.initialize(mContext, w, h);
-        mRenderTargetRoot.initialize(mContext, w, h);
-        mCompositor.resize(mContext, w, h);
+        mRenderTargetPool.initialize(mContext, rw, rh);
+        mRenderTargetRoot.initialize(mContext, rw, rh);
+        mCompositor.resize(mContext, rw, rh, w, h);
     }
 
-    // configure surface (must be called after context creation)
+    // configure surface at native display dimensions
     if (type == 0) {
         surface = (WGPUSurface)target;
         surfaceConfigure(surface, mContext, w, h);
@@ -463,9 +463,9 @@ bool WgRenderer::target(WGPUDevice device, WGPUInstance instance, void* target, 
         targetTexture = (WGPUTexture)target;
     }
 
-    mTargetSurface.stride = w;
-    mTargetSurface.w = w;
-    mTargetSurface.h = h;
+    mTargetSurface.stride = rw;
+    mTargetSurface.w = rw;
+    mTargetSurface.h = rh;
     mTargetSurface.cs = cs;
 
     return true;

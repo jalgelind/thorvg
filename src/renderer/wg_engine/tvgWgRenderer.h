@@ -48,6 +48,7 @@ struct WgRenderer : RenderMethod
     bool intersectsImage(RenderData data, const RenderRegion& region) override;
     bool intersectsShape(RenderData data, const RenderRegion& region) override;
     bool target(WGPUDevice device, WGPUInstance instance, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0);
+    void setRenderScale(uint32_t scale) { renderScale = (scale >= 1 && scale <= 4) ? scale : 1; }
     void* nativeDevice() const { return mContext.device; }
 
     //composition
@@ -64,6 +65,9 @@ struct WgRenderer : RenderMethod
     //partial rendering
     void damage(RenderData rd, const RenderRegion& region) override;
     bool partial(bool disable) override;
+
+    // supersampling
+    uint32_t renderScale = 1;     // 1 = native, 2 = 2x supersample
 
     static WgRenderer* gen(uint32_t threads);
     static bool term();
@@ -104,6 +108,9 @@ private:
     // disposable data list
     Array<RenderData> mDisposeRenderDatas{};
     Key mDisposeKey{};
+
+    uint32_t surfaceWidth = 0;    // actual surface/display width
+    uint32_t surfaceHeight = 0;   // actual surface/display height
 
     // gpu handles
     WGPUTexture targetTexture{}; // external handle
