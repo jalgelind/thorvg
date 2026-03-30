@@ -2427,6 +2427,19 @@ struct TVG_API WgCanvas final : Canvas
     Result target(void* device, void* instance, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0) noexcept;
 
     /**
+     * @brief Sets the internal supersampling scale factor.
+     *
+     * When scale > 1, the renderer allocates internal render targets at
+     * (w*scale, h*scale) and downsamples to the surface during presentation.
+     * Call before target() for the scale to take effect.
+     *
+     * @param[in] scale Supersample factor (1 = native, 2 = 2x, etc.). Clamped to [1, 4].
+     *
+     * @since 1.0
+     */
+    void setRenderScale(uint32_t scale) noexcept;
+
+    /**
      * @brief Creates a new WebGPU Canvas object with optional rendering engine settings.
      *
      * This method generates a WebGPU canvas instance that can be used for drawing vector graphics.

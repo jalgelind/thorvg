@@ -41,7 +41,7 @@ void WgCompositor::updateViewMat(WgContext& context, uint32_t width, uint32_t he
 }
 
 
-void WgCompositor::initialize(WgContext& context, uint32_t width, uint32_t height)
+void WgCompositor::initialize(WgContext& context, uint32_t width, uint32_t height, uint32_t blitW, uint32_t blitH)
 {
     // pipelines (external handle, do not release)
     pipelines.initialize(context);
@@ -51,7 +51,7 @@ void WgCompositor::initialize(WgContext& context, uint32_t width, uint32_t heigh
     // allocate global view matrix handles
     updateViewMat(context, width, height);
     // create render targets handles
-    resize(context, width, height);
+    resize(context, width, height, blitW, blitH);
     // composition and blend geometries
     meshDataBlit.blitBox();
     // force stage buffers initialization
@@ -99,7 +99,11 @@ void WgCompositor::releasePools(WgContext& context)
 }
 
 
-void WgCompositor::resize(WgContext& context, uint32_t width, uint32_t height) {
+void WgCompositor::resize(WgContext& context, uint32_t width, uint32_t height, uint32_t blitW, uint32_t blitH) {
+    // Default blit dimensions to render dimensions if not specified
+    if (blitW == 0) blitW = width;
+    if (blitH == 0) blitH = height;
+
     // release existig handles
     if ((this->width != width) || (this->height != height)) {
         context.layouts.releaseBindGroup(bindGroupStorageTemp);
@@ -111,6 +115,9 @@ void WgCompositor::resize(WgContext& context, uint32_t width, uint32_t height) {
         context.releaseTexture(texDepthStencilMS);
         context.releaseTextureView(texViewDepthStencil);
         context.releaseTexture(texDepthStencil);
+        // release blit depth/stencil
+        context.releaseTextureView(texViewDepthStencilBlit);
+        context.releaseTexture(texDepthStencilBlit);
         // store render target dimensions
         this->height = height;
         this->width = width;
@@ -123,11 +130,14 @@ void WgCompositor::resize(WgContext& context, uint32_t width, uint32_t height) {
         this->height = height;
         // update global view matrix handles
         updateViewMat(context, width, height);
-        // allocate global stencil buffer handles
+        // allocate global stencil buffer handles (render resolution)
         texDepthStencil = context.createTexAttachement(width, height, WGPUTextureFormat_Depth24PlusStencil8, 1);
         texViewDepthStencil = context.createTextureView(texDepthStencil);
         texDepthStencilMS = context.createTexAttachement(width, height, WGPUTextureFormat_Depth24PlusStencil8, 4);
         texViewDepthStencilMS = context.createTextureView(texDepthStencilMS);
+        // allocate blit depth/stencil at surface resolution (may differ when supersampling)
+        texDepthStencilBlit = context.createTexAttachement(blitW, blitH, WGPUTextureFormat_Depth24PlusStencil8, 1);
+        texViewDepthStencilBlit = context.createTextureView(texDepthStencilBlit);
         // initialize intermediate render targets
         targetTemp0.initialize(context, width, height);
         targetTemp1.initialize(context, width, height);
@@ -362,18 +372,20 @@ void WgCompositor::composeScene(WgContext& context, WgRenderTarget* src, WgRende
 void WgCompositor::blit(WgContext& context, WGPUCommandEncoder encoder, WgRenderTarget* src, WGPUTextureView dstView)
 {
     assert(!renderPassEncoder);
+    // Use blit-specific depth/stencil (surface resolution, may differ from render resolution)
     const WGPURenderPassDepthStencilAttachment depthStencilAttachment{
-        .view = texViewDepthStencil,
+        .view = texViewDepthStencilBlit,
         .depthLoadOp = WGPULoadOp_Load,
         .depthStoreOp = WGPUStoreOp_Discard,
         .stencilLoadOp = WGPULoadOp_Load,
         .stencilStoreOp = WGPUStoreOp_Discard
     };
-    const WGPURenderPassColorAttachment colorAttachment { 
+    const WGPURenderPassColorAttachment colorAttachment {
         .view = dstView,
         .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
-        .loadOp = WGPULoadOp_Load,
+        .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
+        .clearValue = {0.0, 0.0, 0.0, 1.0},
     };
     const WGPURenderPassDescriptor renderPassDesc{ .colorAttachmentCount = 1, .colorAttachments = &colorAttachment, .depthStencilAttachment = &depthStencilAttachment };
     renderPassEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
