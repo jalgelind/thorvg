@@ -411,6 +411,31 @@ bool WgRenderer::sync()
         mContext.submitCommandEncoder(commandEncoder);
         mContext.releaseCommandEncoder(commandEncoder);
         mContext.releaseTextureView(dstTextureView);
+    } else {
+        // Surface texture size differs from render target (e.g. macOS window
+        // animation changed the drawable size between draw() and sync()).
+        // Resize render targets to match the actual surface texture so the
+        // next frame renders at the correct size.
+        // NOTE: Do NOT call clearTargets() here — it unconfigures the surface
+        // and nulls the surface pointer, which permanently breaks rendering
+        // when no subsequent target() call restores it.
+        if (texW > 0 && texH > 0) {
+            mRenderTargetPool.release(mContext);
+            mRenderTargetRoot.release(mContext);
+            releaseSurfaceTexture();
+            mRenderTargetPool.initialize(mContext, texW, texH);
+            mRenderTargetRoot.initialize(mContext, texW, texH);
+            mCompositor.resize(mContext, texW, texH);
+            mTargetSurface.stride = texW;
+            mTargetSurface.w = texW;
+            mTargetSurface.h = texH;
+            // Reconfigure the surface at the actual drawable size
+            if (surface) {
+                surfaceConfigure(surface, mContext, texW, texH);
+            }
+        }
+        fprintf(stderr, "[WG_RENDERER] sync: size mismatch tex=%ux%u root=%ux%u (resized)\n",
+            texW, texH, mRenderTargetRoot.width, mRenderTargetRoot.height);
     }
 
     // Present the surface — required by Dawn (wgpu-native presents implicitly)
