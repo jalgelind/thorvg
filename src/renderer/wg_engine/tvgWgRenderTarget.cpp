@@ -21,6 +21,7 @@
  */
 
 #include "tvgWgRenderTarget.h"
+#include <cstdio>
 
 void WgRenderTarget::initialize(WgContext& context, uint32_t width, uint32_t height)
 {
@@ -28,6 +29,10 @@ void WgRenderTarget::initialize(WgContext& context, uint32_t width, uint32_t hei
     this->height = height;
     texture = context.createTexStorage(width, height, WGPUTextureFormat_RGBA8Unorm);
     textureMS = context.createTexAttachement(width, height, WGPUTextureFormat_RGBA8Unorm, 4);
+    if (!texture || !textureMS) {
+        fprintf(stderr, "[WG_RENDERER] RenderTarget::initialize FAILED: %ux%u tex=%p texMS=%p\n",
+                width, height, (void*)texture, (void*)textureMS);
+    }
     texView = context.createTextureView(texture);
     texViewMS = context.createTextureView(textureMS);
     bindGroupRead = context.layouts.createBindGroupStrorage1RO(texView);
@@ -63,6 +68,8 @@ WgRenderTarget* WgRenderTargetPool::allocate(WgContext& context)
         renderTarget = new WgRenderTarget;
         renderTarget->initialize(context, width, height);
         list.push(renderTarget);
+        fprintf(stderr, "[WG_RENDERER] RenderTargetPool: new target #%u (%ux%u, ~%uMB with MSAA)\n",
+                list.count, width, height, (width * height * 4 * 5) / (1024*1024));
     }
     return renderTarget;
 };

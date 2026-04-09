@@ -380,11 +380,12 @@ void WgCompositor::blit(WgContext& context, WGPUCommandEncoder encoder, WgRender
         .stencilLoadOp = WGPULoadOp_Load,
         .stencilStoreOp = WGPUStoreOp_Discard
     };
-    const WGPURenderPassColorAttachment colorAttachment { 
+    const WGPURenderPassColorAttachment colorAttachment {
         .view = dstView,
         .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
-        .loadOp = WGPULoadOp_Load,
+        .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store,
+        .clearValue = {0.0, 0.0, 0.0, 1.0},
     };
     const WGPURenderPassDescriptor renderPassDesc{ .colorAttachmentCount = 1, .colorAttachments = &colorAttachment, .depthStencilAttachment = &depthStencilAttachment };
     renderPassEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
