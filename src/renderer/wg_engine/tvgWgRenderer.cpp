@@ -403,8 +403,11 @@ bool WgRenderer::sync()
 
     if (!dstTexture) return false;
 
+    uint32_t texW = wgpuTextureGetWidth(dstTexture);
+    uint32_t texH = wgpuTextureGetHeight(dstTexture);
+
     // Blit offscreen render target to surface (may downsample if supersampling)
-    {
+    if (texW == surfaceWidth && texH == surfaceHeight) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
         mCompositor.blit(mContext, commandEncoder, &mRenderTargetRoot, dstTextureView);
