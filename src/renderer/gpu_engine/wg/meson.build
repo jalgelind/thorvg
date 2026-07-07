@@ -29,7 +29,9 @@ source_file = [
 
 wgpu_dep = []
 if host_machine.system() != 'emscripten'
-    wgpu_dep = dependency('wgpu_native')
+    # js-seq: optional — we build the WG backend against Dawn (webgpu.h provided via
+    # -I<DAWN_INCLUDE_DIRS>), not wgpu_native, so this dependency must not be required.
+    wgpu_dep = dependency('wgpu_native', required: false)
 endif
 
 engine_dep += [declare_dependency(
