@@ -413,9 +413,10 @@ bool WgRenderer::sync()
 
     if (!dstTexture) return false;
 
-    // insure that surface and offscreen target have the same size
-    if ((wgpuTextureGetWidth(dstTexture) == mRenderTargetRoot.width) && 
-        (wgpuTextureGetHeight(dstTexture) == mRenderTargetRoot.height)) {
+    // js-seq: blit when the destination matches the NATIVE surface size (the root render
+    // target is Nx that when supersampling; mCompositor.blit downsamples root → surface).
+    if ((wgpuTextureGetWidth(dstTexture) == surfaceWidth) &&
+        (wgpuTextureGetHeight(dstTexture) == surfaceHeight)) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
         // show root offscreen buffer
@@ -443,30 +444,37 @@ Result WgRenderer::target(const WgCanvas::Context& ctx, void* target, uint32_t w
 
     if (w == 0 || h == 0) return Result::InvalidArguments;
 
+    // js-seq: supersampling — render internally at Nx (rw,rh); the surface stays native
+    // (w,h) and the compositor's blit downsamples the root to it (blit dims = w,h).
+    const uint32_t rw = w * renderScale;
+    const uint32_t rh = h * renderScale;
+
     // context has been changed, need to recreate all instances
     if ((mContext.device != ctx.device) || (mContext.instance != ctx.instance) || mContext.adapter != ctx.adapter) {
         release();
         mContext.initialize(ctx);
-        mRenderTargetPool.initialize(mContext, w, h);
-        mRenderTargetRoot.initialize(mContext, w, h);
-        mCompositor.initialize(mContext, w, h);
-    // update render targets dimensions
-    } else if ((mTargetSurface.w != w) || (mTargetSurface.h != h) || (type == 0 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
+        mRenderTargetPool.initialize(mContext, rw, rh);
+        mRenderTargetRoot.initialize(mContext, rw, rh);
+        mCompositor.initialize(mContext, rw, rh, w, h);
+    // update render targets dimensions (compare against the NATIVE surface dims)
+    } else if ((surfaceWidth != w) || (surfaceHeight != h) || (type == 0 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
         mRenderTargetPool.release(mContext);
         mRenderTargetRoot.release(mContext);
         clearTargets();
-        mRenderTargetPool.initialize(mContext, w, h);
-        mRenderTargetRoot.initialize(mContext, w, h);
-        mCompositor.resize(mContext, w, h);
+        mRenderTargetPool.initialize(mContext, rw, rh);
+        mRenderTargetRoot.initialize(mContext, rw, rh);
+        mCompositor.resize(mContext, rw, rh, w, h);
     }
 
-    mTargetSurface.stride = w;
-    mTargetSurface.w = w;
-    mTargetSurface.h = h;
+    surfaceWidth = w;
+    surfaceHeight = h;
+    mTargetSurface.stride = rw;
+    mTargetSurface.w = rw;   // scene renders at the supersampled resolution
+    mTargetSurface.h = rh;
     mTargetSurface.cs = cs;
     mTargetSurface.premultiplied = true;  // TODO: by default for v1 backward compat. properly addressed later v2 by aligning with actual alpha mode.
 
-    // configure surface (must be called after context creation)
+    // configure surface at NATIVE resolution (must be called after context creation)
     if (type == 0) surfaceConfigure((WGPUSurface)target, mContext, w, h, cs);
     else targetTexture = (WGPUTexture)target;
 

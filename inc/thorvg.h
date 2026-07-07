@@ -2479,11 +2479,10 @@ struct TVG_API WgCanvas final : Canvas
     /**
      * @brief Sets the internal supersampling scale factor (js-seq local extension).
      *
-     * When scale > 1, the renderer would allocate internal render targets at (w*scale, h*scale)
-     * and downsample to the surface during presentation. Currently only scale == 1 (native) is
-     * honored; > 1 is stored but inert pending compositor support. Call before target().
+     * When scale > 1, the renderer allocates internal render targets at (w*scale, h*scale)
+     * and downsamples to the surface during presentation (anti-aliasing). Call before target().
      *
-     * @param[in] scale Supersample factor. Clamped to [1, 4].
+     * @param[in] scale Supersample factor (1 = native, 2 = 2x, …). Clamped to [1, 4].
      */
     void setRenderScale(uint32_t scale) noexcept;
 

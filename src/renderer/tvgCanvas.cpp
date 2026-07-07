@@ -231,10 +231,13 @@ Result WgCanvas::target(const Context& context, void* target, uint32_t w, uint32
 #ifdef THORVG_WG_ENGINE_SUPPORT
     if (pImpl->status == Status::Updating || pImpl->status == Status::Drawing) return Result::InsufficientCondition;
 
-    auto ret = static_cast<WgRenderer*>(pImpl->renderer)->target(context, target, w, h, cs, type);
+    auto* wgRenderer = static_cast<WgRenderer*>(pImpl->renderer);
+    auto ret = wgRenderer->target(context, target, w, h, cs, type);
     if (ret != Result::Success) return ret;
 
-    pImpl->vport = {{0, 0}, {(int32_t)w, (int32_t)h}};
+    //js-seq: the scene renders at the supersampled (Nx) resolution; viewport must match.
+    auto rs = wgRenderer->getRenderScale();
+    pImpl->vport = {{0, 0}, {(int32_t)(w * rs), (int32_t)(h * rs)}};
     pImpl->renderer->viewport(pImpl->vport);
     pImpl->status = Status::Damaged;  // Paints must be updated again with this new target.
 

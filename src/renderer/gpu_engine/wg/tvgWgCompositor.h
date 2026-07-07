@@ -49,6 +49,10 @@ private:
     WGPUTextureView texViewDepthStencil{};
     WGPUTexture texDepthStencilMS{};
     WGPUTextureView texViewDepthStencilMS{};
+    // js-seq: blit-pass depth/stencil at SURFACE resolution (may differ from the render
+    // resolution when supersampling — the blit downsamples the Nx root to the 1x surface).
+    WGPUTexture texDepthStencilBlit{};
+    WGPUTextureView texViewDepthStencilBlit{};
     // global view matrix handles
     WGPUBuffer bufferViewMat{};
     WGPUBindGroup bindGroupViewMat{};
@@ -106,11 +110,11 @@ private:
     void clearClipPath(WgContext& context, WgRenderDataPaint* paint);
     void updateViewMat(WgContext& context, uint32_t width, uint32_t height);
 public:
-    void initialize(WgContext& context, uint32_t width, uint32_t height);
+    void initialize(WgContext& context, uint32_t width, uint32_t height, uint32_t blitW = 0, uint32_t blitH = 0);
     void initPools(WgContext& context);
     void release(WgContext& context);
     void releasePools(WgContext& context);
-    void resize(WgContext& context, uint32_t width, uint32_t height);
+    void resize(WgContext& context, uint32_t width, uint32_t height, uint32_t blitW = 0, uint32_t blitH = 0);
 
     // render passes workflow
     void beginRenderPassMS(WGPUCommandEncoder encoder, WgRenderTarget* target, bool clear, WGPUColor clearColor = { 0.0, 0.0, 0.0, 0.0 });
