@@ -32,6 +32,7 @@ struct WgRenderer : RenderMethod
     bool preUpdate() override;
     RenderData prepare(const RenderShape& rshape, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags, bool clipper) override;
     RenderData prepare(RenderSurface* surface, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, FilterMethod filter, RenderUpdateFlag flags) override;
+    RenderData prepare(void* nativeTexture, uint32_t w, uint32_t h, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags) override;
     bool postUpdate() override;
     bool preRender() override;
     bool renderShape(RenderData data) override;
@@ -48,6 +49,9 @@ struct WgRenderer : RenderMethod
     bool intersectsImage(RenderData data, const RenderRegion& region) override;
     bool intersectsShape(RenderData data, const RenderRegion& region) override;
     Result target(const WgCanvas::Context& ctx, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0);
+    //js-seq: supersampling factor. Stored here; only scale==1 (native) is honored today —
+    //Nx supersampling needs a surface-sized blit depth-stencil in WgCompositor (follow-up).
+    void setRenderScale(uint32_t scale) { renderScale = (scale >= 1 && scale <= 4) ? scale : 1; }
 
     //composition
     RenderCompositor* target(const RenderRegion& region, ColorSpace cs, CompositionFlag flags) override;
@@ -108,6 +112,8 @@ private:
     WGPUTexture targetTexture{}; // external handle
     WGPUSurfaceTexture surfaceTexture{};
     WGPUSurface surface{};  // external handle
+
+    uint32_t renderScale = 1;  //js-seq: supersample factor (1 = native; see setRenderScale)
 };
 
 #endif /* _TVG_WG_RENDERER_H_ */

@@ -1707,6 +1707,23 @@ struct TVG_API Picture : Paint
     Result load(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs, bool copy = false) noexcept;
 
     /**
+     * @brief Imports an external, already-resident GPU texture as the picture's image source.
+     *
+     * Unlike load(), no pixel upload occurs — the picture references the given native GPU
+     * texture directly (zero-copy) and composites it in scene z-order. The texture is
+     * BORROWED: ThorVG does not take ownership and never releases it; the caller must keep
+     * it alive while the picture is drawn. WebGPU backend only: @p nativeTexture is a
+     * WGPUTexture and must be an RGBA8Unorm texture (interpreted as ColorSpace::ABGR8888S).
+     *
+     * @param[in] nativeTexture The native GPU texture handle (WGPUTexture on the WebGPU backend).
+     * @param[in] w The width of the texture in pixels.
+     * @param[in] h The height of the texture in pixels.
+     *
+     * @note js-seq local extension (not upstream ThorVG).
+     */
+    Result loadExternal(void* nativeTexture, uint32_t w, uint32_t h) noexcept;
+
+    /**
      * @brief Sets the asset resolver callback for handling external resources (e.g., images and fonts).
      *
      * This callback is invoked when an external asset reference (such as an image source or file path)
@@ -2458,6 +2475,17 @@ struct TVG_API WgCanvas final : Canvas
      * @see Canvas::sync()
      */
     Result target(const Context& context, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0) noexcept;
+
+    /**
+     * @brief Sets the internal supersampling scale factor (js-seq local extension).
+     *
+     * When scale > 1, the renderer would allocate internal render targets at (w*scale, h*scale)
+     * and downsample to the surface during presentation. Currently only scale == 1 (native) is
+     * honored; > 1 is stored but inert pending compositor support. Call before target().
+     *
+     * @param[in] scale Supersample factor. Clamped to [1, 4].
+     */
+    void setRenderScale(uint32_t scale) noexcept;
 
     /**
      * @brief Creates a new WebGPU Canvas object with optional rendering engine settings.

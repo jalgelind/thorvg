@@ -332,9 +332,33 @@ void WgRenderDataPicture::setImage(WGPUTexture texture, WGPUBindGroup bindGroup,
     imageStamp = texture ? stamp : 0;
 }
 
+void WgRenderDataPicture::setExternalImage(WgContext& context, WGPUTexture texture, uint32_t w, uint32_t h, const Matrix& transform)
+{
+    //js-seq: BORROWED, app-owned texture. Build our own view + bindGroup (released by
+    //releaseExternal); the texture manager is bypassed entirely. Assumes any prior image
+    //was already released by the caller (releaseTexture()).
+    auto view = context.createTextureView(texture);
+    auto bindGroup = context.layouts.createBindGroupTexSampled(context.samplerLinearClamp, view);
+    meshData.imageBox(static_cast<float>(w), static_cast<float>(h), transform);
+    //stamp 0 is a sentinel that never matches the manager's stamp (>= 1), so releaseTexture()
+    //never asks the manager to free this borrowed texture.
+    setImage(texture, bindGroup, nullptr, FilterMethod::Bilinear, 0);
+    imageExternalView = view;
+}
+
+void WgRenderDataPicture::releaseExternal(WgContext& context)
+{
+    if (!imageExternalView) return;
+    context.layouts.releaseBindGroup(imageBindGroup);   //ours to free
+    context.releaseTextureView(imageExternalView);       //ours to free
+    imageExternalView = nullptr;
+    //imageTexture is BORROWED — never released here; clearImage() only nulls the handle.
+}
+
 void WgRenderDataPicture::releaseTexture(WgTextureMgr& textures, WgContext& context)
 {
-    if (imageTexture && imageStamp == textures.stamp) textures.release(context, imageSource, imageFilter, imageTexture);
+    if (imageExternalView) releaseExternal(context);   //js-seq: borrowed external texture
+    else if (imageTexture && imageStamp == textures.stamp) textures.release(context, imageSource, imageFilter, imageTexture);
     clearImage();
 }
 
@@ -349,6 +373,7 @@ void WgRenderDataPicture::clearImage()
 
 void WgRenderDataPicture::release(WgContext& context)
 {
+    releaseExternal(context);   //js-seq: free a borrowed external texture's view+bindGroup (no-op otherwise)
     renderSettings.release(context);
     clearImage();
     WgRenderDataPaint::release(context);

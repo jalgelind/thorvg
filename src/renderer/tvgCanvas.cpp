@@ -246,6 +246,14 @@ Result WgCanvas::target(const Context& context, void* target, uint32_t w, uint32
     return Result::NonSupport;
 }
 
+void WgCanvas::setRenderScale(TVG_UNUSED uint32_t scale) noexcept
+{
+#ifdef THORVG_WG_ENGINE_SUPPORT
+    auto renderer = static_cast<WgRenderer*>(pImpl->renderer);
+    if (renderer) renderer->setRenderScale(scale);
+#endif
+}
+
 WgCanvas* WgCanvas::gen(EngineOption op) noexcept
 {
 #ifdef THORVG_WG_ENGINE_SUPPORT
