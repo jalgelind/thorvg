@@ -300,7 +300,11 @@ struct PictureImpl : Picture
     {
         auto ret = true;
 
-        if (bitmap) {
+        //NSEQ patch (eccb56ee): an external-texture picture also renders as an image.
+        //update() sets impl.rd via prepare(externalTexture,...); render() must dispatch it
+        //to renderImage too, else the paint is prepared but never drawn (a thorvg bump
+        //narrowed this branch from `impl.rd` to `bitmap`, silently dropping external pictures).
+        if (bitmap || externalTexture) {
             renderer->blend(impl.blendMethod);
             return renderer->renderImage(impl.rd);
         } else if (vector) {
