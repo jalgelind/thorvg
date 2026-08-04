@@ -112,11 +112,17 @@ void WgRenderer::surfaceConfigure(WGPUSurface surface, WgContext& context, uint3
         .alphaMode = WGPUCompositeAlphaMode_Premultiplied,  // for v1.0 backward compat. this can be removed with old target() api.
         .presentMode = WGPUPresentMode_Fifo
 #elif defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || (defined(_WIN32) && !defined(__CYGWIN__))
-        // js-seq: opaque desktop window — ignore the framebuffer alpha so straight-alpha
-        // output isn't composited transparent (black) when no adapter is supplied to pick
-        // an alpha mode. Mailbox (non-blocking, no tearing) instead of Immediate: proven
-        // supported on our Dawn/Metal surface and avoids Fifo's ~1s UI-thread stall.
-        .alphaMode = WGPUCompositeAlphaMode_Opaque,
+        // js-seq: a desktop window is OPAQUE BY DEFAULT — ignore the framebuffer alpha so
+        // straight-alpha output isn't composited transparent (black) when no adapter is
+        // supplied to pick an alpha mode. A caller that wants a SEE-THROUGH window opts in
+        // by passing the PREMULTIPLIED colorspace (ABGR8888, not ...S): WgRenderer already
+        // emits a premultiplied final blit, so that is the combination the compositor
+        // needs. This also stops Dawn setting CAMetalLayer.opaque = YES behind our back —
+        // it derives that from the alpha mode. docs/TODO_window_transparency.md.
+        // Mailbox (non-blocking, no tearing) instead of Immediate: proven supported on our
+        // Dawn/Metal surface and avoids Fifo's ~1s UI-thread stall.
+        .alphaMode = (cs == ColorSpace::ABGR8888) ? WGPUCompositeAlphaMode_Premultiplied
+                                                  : WGPUCompositeAlphaMode_Opaque,
         .presentMode = WGPUPresentMode_Mailbox
 #else
         // Use the WebGPU default present mode (Fifo).
