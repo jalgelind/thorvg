@@ -25,6 +25,18 @@
 
 #include "tvgWgCommon.h"
 
+// js-seq: optional progress hook for WgPipelines::initialize(). Invoked once per
+// created render pipeline with (created, total) so a host can draw a determinate
+// loading bar through the cold-cache shader compile. Null by default — set it
+// around WgCanvas::target() and clear it after. Not thread-safe: initialize()
+// runs on the caller's thread and so does the callback.
+// WG_PIPELINE_TOTAL is nominal; if it drifts from the real count the bar just
+// saturates early, which is cosmetic. Keep it in step with initialize(): 27 single
+// pipelines plus the 11 scene compositions. The blend variants are made on first use.
+constexpr uint32_t WG_PIPELINE_TOTAL = 38;
+extern void (*wgPipelineProgressHook)(uint32_t created, uint32_t total);
+extern uint32_t wgPipelineProgressCount;
+
 class WgPipelines {
 private:
     // shaders helpers
