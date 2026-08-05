@@ -68,7 +68,14 @@ WGPURenderPipeline WgPipelines::createRenderPipeline(
         .multisample = multisampleState,
         .fragment = &fragmentState
     };
-    return wgpuDeviceCreateRenderPipeline(device, &renderPipelineDesc);
+    auto pipeline = wgpuDeviceCreateRenderPipeline(device, &renderPipelineDesc);
+    // js-seq: report progress. Every pipeline funnels through here, and on a cold
+    // shader cache each one is a blocking MSL compile — initialize() can take
+    // ~10s in a single call the caller's thread cannot otherwise interrupt, so
+    // without this a host's loading screen has no way to move. See
+    // docs/TODO_wg_cold_start.md in the js-seq repo.
+    if (wgPipelineProgressHook) wgPipelineProgressHook(++wgPipelineProgressCount, WG_PIPELINE_TOTAL);
+    return pipeline;
 }
 
 
@@ -148,8 +155,15 @@ WGPUDepthStencilState WgPipelines::makeDepthStencilState(
 }
 
 
+// js-seq: see tvgWgPipelines.h
+void (*wgPipelineProgressHook)(uint32_t created, uint32_t total) = nullptr;
+uint32_t wgPipelineProgressCount = 0;
+
+
 void WgPipelines::initialize(WgContext& context)
 {
+    wgPipelineProgressCount = 0;   // js-seq: restart the progress count per init
+
     // common pipeline settings
     const WGPUVertexAttribute vertexAttributePos { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 };
     const WGPUVertexAttribute vertexAttributeColor { .format = WGPUVertexFormat_Float32x4, .offset = 0, .shaderLocation = 1 };
