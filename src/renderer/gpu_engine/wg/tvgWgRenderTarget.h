@@ -33,7 +33,8 @@ struct WgRenderTarget {
     WGPUTextureView texViewMS{};
     WGPUBindGroup bindGroupRead{};
     WGPUBindGroup bindGroupWrite{};
-    WGPUBindGroup bindGroupTexture{};
+    WGPUBindGroup bindGroupTexture{};        // NEAREST — for 1:1 same-size sampling
+    WGPUBindGroup bindGroupTextureLinear{};  // LINEAR  — js-seq: present-time downsample only
     uint32_t width{};
     uint32_t height{};
 

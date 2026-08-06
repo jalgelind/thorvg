@@ -397,7 +397,24 @@ void WgCompositor::blit(WgContext& context, WGPUCommandEncoder encoder, WgRender
     };
     const WGPURenderPassDescriptor renderPassDesc{ .colorAttachmentCount = 1, .colorAttachments = &colorAttachment, .depthStencilAttachment = &depthStencilAttachment };
     renderPassEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
-    wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, src->bindGroupTexture, 0, nullptr);
+    // js-seq: LINEAR, not nearest. This is the only minifying sample in the engine: the
+    // root target is `ss` times the surface when supersampling, and the quad is the full
+    // 0..1 box, so destination pixel i samples source coordinate (i+0.5)*ss. At ss=2 that
+    // is exactly 2i+1.0 -- the boundary between texels 2i and 2i+1 -- so bilinear weights
+    // them 0.5/0.5 in each axis and the result IS the unweighted 2x2 box reduce that
+    // presented_metrics.hpp/canvas.cpp/pixel_snap.hpp all document and assert.
+    //
+    // With the old nearest sampler this pass threw away 3 of every 4 rendered samples and
+    // supersampling bought no antialiasing whatsoever -- measured on a stroked curve, the
+    // presented edge carried 4 coverage levels at ss=1 and the SAME 4 at ss=2 (18 with this
+    // sampler), while the intermediate/full-ink pixel ratio FELL from 2.32 to 0.96, i.e.
+    // ss=2 presented slightly HARDER edges than no supersampling at all.
+    //
+    // At ss=1 this is a no-op: the sample lands on the texel centre and bilinear returns
+    // that texel exactly. Whole-pixel-replicated text is likewise untouched at any ss --
+    // every tap inside a replicated block has the same value, so averaging is the identity
+    // (verified: a ProFont band was bit-identical under both samplers).
+    wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, src->bindGroupTextureLinear, 0, nullptr);
     wgpuRenderPassEncoderSetPipeline(renderPassEncoder, premultiplied ? pipelines.blit : pipelines.blit_unpremultiplied);
     drawMeshImage(context, &meshDataBlit);
     wgpuRenderPassEncoderEnd(renderPassEncoder);

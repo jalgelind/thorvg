@@ -34,6 +34,10 @@ void WgContext::initialize(const WgCanvas::Context& ctx)
 
     samplerNearestClamp = createSampler(WGPUFilterMode_Nearest, WGPUMipmapFilterMode_Nearest, WGPUAddressMode_ClampToEdge, 1);
     samplerNearestRepeat = createSampler(WGPUFilterMode_Nearest, WGPUMipmapFilterMode_Nearest, WGPUAddressMode_Repeat);
+    // js-seq: see the declaration in tvgWgCommon.h. Mipmap filter must stay Nearest
+    // (the render targets are single-mip) and anisotropy must stay 1, or the 2:1
+    // downsample stops being the exact 4-tap average the box-reduce contract needs.
+    samplerLinearClampNoMip = createSampler(WGPUFilterMode_Linear, WGPUMipmapFilterMode_Nearest, WGPUAddressMode_ClampToEdge, 1);
     samplerLinearRepeat = createSampler(WGPUFilterMode_Linear, WGPUMipmapFilterMode_Linear, WGPUAddressMode_Repeat, 4);
     samplerLinearMirror = createSampler(WGPUFilterMode_Linear, WGPUMipmapFilterMode_Linear, WGPUAddressMode_MirrorRepeat, 4);
     samplerLinearClamp = createSampler(WGPUFilterMode_Linear, WGPUMipmapFilterMode_Linear, WGPUAddressMode_ClampToEdge, 4);
@@ -48,6 +52,7 @@ void WgContext::release()
     releaseSampler(samplerLinearClamp);
     releaseSampler(samplerLinearMirror);
     releaseSampler(samplerLinearRepeat);
+    releaseSampler(samplerLinearClampNoMip);
     releaseSampler(samplerNearestRepeat);
     releaseSampler(samplerNearestClamp);
     releaseQueue(queue);

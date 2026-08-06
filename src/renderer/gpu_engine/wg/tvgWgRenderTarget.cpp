@@ -33,11 +33,20 @@ void WgRenderTarget::initialize(WgContext& context, uint32_t width, uint32_t hei
     bindGroupRead = context.layouts.createBindGroupStrorage1RO(texView);
     bindGroupWrite = context.layouts.createBindGroupStrorage1WO(texView);
     bindGroupTexture = context.layouts.createBindGroupTexSampled(context.samplerNearestRepeat, texView);
+    // js-seq: a SECOND view of the same texture, sampled LINEAR, used by exactly one
+    // call site: WgCompositor::blit(), the present-time root -> surface downsample.
+    // Every other bindGroupTexture use (drawScene/blendScene/composeScene/effects)
+    // samples a same-sized target 1:1, where the sample lands on the texel centre and
+    // linear degenerates to nearest -- so those keep the nearest bind group and are
+    // provably unaffected. Keeping the two separate means a future non-1:1 use of
+    // bindGroupTexture cannot silently inherit a filter it did not ask for.
+    bindGroupTextureLinear = context.layouts.createBindGroupTexSampled(context.samplerLinearClampNoMip, texView);
 }
 
 
 void WgRenderTarget::release(WgContext& context)
 {
+    context.layouts.releaseBindGroup(bindGroupTextureLinear);
     context.layouts.releaseBindGroup(bindGroupTexture);
     context.layouts.releaseBindGroup(bindGroupWrite);
     context.layouts.releaseBindGroup(bindGroupRead);

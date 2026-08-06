@@ -35,6 +35,11 @@ struct WgContext {
     WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
     WGPUSampler samplerNearestClamp;
     WGPUSampler samplerNearestRepeat;
+    // js-seq: the present-time downsample sampler. Linear mag/min, NO mip, clamp,
+    // anisotropy 1. At an exact 2:1 minification with the full 0..1 blit quad this
+    // is precisely an unweighted 2x2 box reduce (see WgCompositor::blit), which is
+    // the contract the rest of the codebase documents and tests against.
+    WGPUSampler samplerLinearClampNoMip;
     WGPUSampler samplerLinearRepeat;
     WGPUSampler samplerLinearMirror;
     WGPUSampler samplerLinearClamp;
