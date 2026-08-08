@@ -32,7 +32,9 @@
 // runs on the caller's thread and so does the callback.
 // WG_PIPELINE_TOTAL is nominal; if it drifts from the real count the bar just
 // saturates early, which is cosmetic. Keep it in step with initialize().
-constexpr uint32_t WG_PIPELINE_TOTAL = 125;
+// 24 since the blend/compose variants went lazy (was 125): 3 stencil + 5 clip
+// path + 8 normal blend + 2 blit + 6 effects.
+constexpr uint32_t WG_PIPELINE_TOTAL = 24;
 extern void (*wgPipelineProgressHook)(uint32_t created, uint32_t total);
 extern uint32_t wgPipelineProgressCount;
 
@@ -146,9 +148,26 @@ private:
         const WGPUCompareFunction depthCompare, WGPUOptionalBool depthWriteEnabled,
         const WGPUCompareFunction stencilFunctionFrnt, const WGPUStencilOperation stencilOperationFrnt,
         const WGPUCompareFunction stencilFunctionBack, const WGPUStencilOperation stencilOperationBack);
+    // js-seq: shared by initialize() and the lazy accessors so they cannot drift.
+    WGPUDepthStencilState depthStencilShape();
+    WGPUDepthStencilState depthStencilScene();
 public:
     void initialize(WgContext& context);
     void release(WgContext& context);
+
+    // js-seq: lazy accessors for the blend/compose variants. The arrays above stay
+    // public and are still the storage, but read them through these — a raw
+    // `solid_blend[i]` is null until someone has asked for that variant.
+    // idx is a raw (uint32_t)BlendMethod / (uint32_t)CompositeMethod cast from the
+    // caller with no bounds check — same as the direct array indexing this
+    // replaced, so no new hazard, but the accessors assert rather than inherit a
+    // silent OOB if an enum ever grows past its table.
+    WGPURenderPipeline blendSolid(WgContext& context, uint32_t idx);
+    WGPURenderPipeline blendRadial(WgContext& context, uint32_t idx);
+    WGPURenderPipeline blendLinear(WgContext& context, uint32_t idx);
+    WGPURenderPipeline blendImage(WgContext& context, uint32_t idx);
+    WGPURenderPipeline blendScene(WgContext& context, uint32_t idx);
+    WGPURenderPipeline sceneCompose(WgContext& context, uint32_t idx);
 };
 
 #endif // _TVG_WG_PIPELINES_H_
