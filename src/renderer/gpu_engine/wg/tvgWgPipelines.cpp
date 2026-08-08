@@ -25,6 +25,89 @@
 #include <cstring>
 #include <cassert>
 
+// js-seq: pipeline state that does not depend on WgContext, hoisted out of
+// initialize() so the eager pipelines there and the lazily-created blend/compose
+// ones below share ONE definition. Duplicating these into the lazy getters would
+// let a blend pipeline silently drift from its non-blend sibling the first time
+// someone edits a vertex layout upstream.
+namespace {
+
+const WGPUVertexAttribute vertexAttributePos { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 };
+const WGPUVertexAttribute vertexAttributeColor { .format = WGPUVertexFormat_Float32x4, .offset = 0, .shaderLocation = 1 };
+const WGPUVertexAttribute vertexAttributeTex { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 1 };
+const WGPUVertexAttribute vertexAttributesPos[] { vertexAttributePos };
+const WGPUVertexAttribute vertexAttributesColor[] { vertexAttributeColor };
+const WGPUVertexAttribute vertexAttributesTex[] { vertexAttributeTex };
+const WGPUVertexBufferLayout vertexBufferLayoutPos { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesPos };
+// Solid path: one vec4 color per draw from an instance-rate aux vertex slot.
+const WGPUVertexBufferLayout vertexBufferLayoutColor { .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 16, .attributeCount = 1, .attributes = vertexAttributesColor };
+const WGPUVertexBufferLayout vertexBufferLayoutTex { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesTex };
+const WGPUVertexBufferLayout vertexBufferLayoutsSolid[] { vertexBufferLayoutPos, vertexBufferLayoutColor };
+const WGPUVertexBufferLayout vertexBufferLayoutsShape[] { vertexBufferLayoutPos };
+const WGPUVertexBufferLayout vertexBufferLayoutsImage[] { vertexBufferLayoutPos, vertexBufferLayoutTex };
+const WGPUMultisampleState multisampleState   { .count = 4, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
+const WGPUMultisampleState multisampleStateX1 { .count = 1, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
+const WGPUTextureFormat offscreenTargetFormat = WGPUTextureFormat_RGBA8Unorm;
+
+const WGPUBlendComponent blendComponentSrc { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_Zero };
+const WGPUBlendComponent blendComponentNrm { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha };
+const WGPUBlendState blendStateSrc { .color = blendComponentSrc, .alpha = blendComponentSrc };
+const WGPUBlendState blendStateNrm { .color = blendComponentNrm, .alpha = blendComponentNrm };
+
+// blend shader names
+const char* shaderBlendNames[] {
+    "fs_main_Normal",
+    "fs_main_Multiply",
+    "fs_main_Screen",
+    "fs_main_Overlay",
+    "fs_main_Darken",
+    "fs_main_Lighten",
+    "fs_main_ColorDodge",
+    "fs_main_ColorBurn",
+    "fs_main_HardLight",
+    "fs_main_SoftLight",
+    "fs_main_Difference",
+    "fs_main_Exclusion",
+    "fs_main_Hue",
+    "fs_main_Saturation",
+    "fs_main_Color",
+    "fs_main_Luminosity",
+    "fs_main_Add",
+    "fs_main_Normal"  //TODO: a padding for reserved Hardmix.
+};
+
+// compose shader names
+const char* shaderComposeNames[] {
+    "fs_main_None",
+    "fs_main_AlphaMask",
+    "fs_main_InvAlphaMask",
+    "fs_main_LumaMask",
+    "fs_main_InvLumaMask",
+    "fs_main_AddMask",
+    "fs_main_SubtractMask",
+    "fs_main_IntersectMask",
+    "fs_main_DifferenceMask",
+    "fs_main_LightenMask",
+    "fs_main_DarkenMask"
+};
+
+// compose shader blend states
+const WGPUBlendState composeBlends[] {
+    blendStateNrm, // None
+    blendStateNrm, // AlphaMask
+    blendStateNrm, // InvAlphaMask
+    blendStateNrm, // LumaMask
+    blendStateNrm, // InvLumaMask
+    blendStateSrc, // AddMask
+    blendStateSrc, // SubtractMask
+    blendStateSrc, // IntersectMask
+    blendStateSrc, // DifferenceMask
+    blendStateSrc, // LightenMask
+    blendStateSrc  // DarkenMask
+};
+
+} // namespace
+
 WGPUShaderModule WgPipelines::createShaderModule(WGPUDevice device, const char* label, const char* code)
 {
     WGPUShaderSourceWGSL shaderSourceWGSL {
@@ -164,29 +247,8 @@ void WgPipelines::initialize(WgContext& context)
 {
     wgPipelineProgressCount = 0;   // js-seq: restart the progress count per init
 
-    // common pipeline settings
-    const WGPUVertexAttribute vertexAttributePos { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 0 };
-    const WGPUVertexAttribute vertexAttributeColor { .format = WGPUVertexFormat_Float32x4, .offset = 0, .shaderLocation = 1 };
-    const WGPUVertexAttribute vertexAttributeTex { .format = WGPUVertexFormat_Float32x2, .offset = 0, .shaderLocation = 1 };
-    const WGPUVertexAttribute vertexAttributesPos[] { vertexAttributePos };
-    const WGPUVertexAttribute vertexAttributesColor[] { vertexAttributeColor };
-    const WGPUVertexAttribute vertexAttributesTex[] { vertexAttributeTex };
-    const WGPUVertexBufferLayout vertexBufferLayoutPos { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesPos };
-    // Solid path: one vec4 color per draw from an instance-rate aux vertex slot.
-    const WGPUVertexBufferLayout vertexBufferLayoutColor { .stepMode = WGPUVertexStepMode_Instance, .arrayStride = 16, .attributeCount = 1, .attributes = vertexAttributesColor };
-    const WGPUVertexBufferLayout vertexBufferLayoutTex { .stepMode = WGPUVertexStepMode_Vertex, .arrayStride = 8, .attributeCount = 1, .attributes = vertexAttributesTex };
-    const WGPUVertexBufferLayout vertexBufferLayoutsSolid[] { vertexBufferLayoutPos, vertexBufferLayoutColor };
-    const WGPUVertexBufferLayout vertexBufferLayoutsShape[] { vertexBufferLayoutPos };
-    const WGPUVertexBufferLayout vertexBufferLayoutsImage[] { vertexBufferLayoutPos, vertexBufferLayoutTex };
-    const WGPUMultisampleState multisampleState   { .count = 4, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
-    const WGPUMultisampleState multisampleStateX1 { .count = 1, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false };
-    const WGPUTextureFormat offscreenTargetFormat = WGPUTextureFormat_RGBA8Unorm;
-
-    // blend states
-    WGPUBlendComponent blendComponentSrc { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_Zero };
-    WGPUBlendComponent blendComponentNrm { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha };
-    const WGPUBlendState blendStateSrc { .color = blendComponentSrc, .alpha = blendComponentSrc };
-    const WGPUBlendState blendStateNrm { .color = blendComponentNrm, .alpha = blendComponentNrm };
+    // js-seq: vertex layouts, multisample/blend states and the blend/compose name
+    // tables now live at file scope — see the note there.
 
     const WgBindGroupLayouts& layouts = context.layouts;
     // bind group layouts helpers
@@ -221,8 +283,10 @@ void WgPipelines::initialize(WgContext& context)
     const WGPUDepthStencilState depthStencilStateMergeDepthStencil     = makeDepthStencilState(WGPUCompareFunction_Equal,   WGPUOptionalBool_True,  WGPUCompareFunction_Always,   WGPUStencilOperation_Keep);
     const WGPUDepthStencilState depthStencilStateClearDepth            = makeDepthStencilState(WGPUCompareFunction_Always,  WGPUOptionalBool_True,  WGPUCompareFunction_Always,   WGPUStencilOperation_Keep);
     // depth stencil state blend, compose and blit
-    const WGPUDepthStencilState depthStencilStateShape = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False,  WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
-    const WGPUDepthStencilState depthStencilStateScene = makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False,  WGPUCompareFunction_Always, WGPUStencilOperation_Zero);
+    // js-seq: via the accessors, so the lazy blend/compose pipelines below cannot
+    // drift from the eager ones that use the same state.
+    const WGPUDepthStencilState depthStencilStateShape = depthStencilShape();
+    const WGPUDepthStencilState depthStencilStateScene = depthStencilScene();
     // shaders
     char shaderSourceBuff[16384]{};
     shader_stencil = createShaderModule(context.device, "The shader stencil", cShaderSrc_Stencil);
@@ -383,106 +447,13 @@ void WgPipelines::initialize(WgContext& context)
         WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
         depthStencilStateScene, multisampleState);
 
-    // blend shader names
-    const char* shaderBlendNames[] {
-        "fs_main_Normal",
-        "fs_main_Multiply",
-        "fs_main_Screen",
-        "fs_main_Overlay",
-        "fs_main_Darken",
-        "fs_main_Lighten",
-        "fs_main_ColorDodge",
-        "fs_main_ColorBurn",
-        "fs_main_HardLight",
-        "fs_main_SoftLight",
-        "fs_main_Difference",
-        "fs_main_Exclusion",
-        "fs_main_Hue",
-        "fs_main_Saturation",
-        "fs_main_Color",
-        "fs_main_Luminosity",
-        "fs_main_Add",
-        "fs_main_Normal"  //TODO: a padding for reserved Hardmix.
-    };
-
-    // render pipeline shape blend
-    for (uint32_t i = 0; i < 18; i++) {
-        // blend solid
-        solid_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline solid blend",
-            shader_solid_blend, "vs_main", shaderBlendNames[i],
-            layout_solid_blend, vertexBufferLayoutsSolid, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend radial
-        radial_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline radial blend",
-            shader_radial_blend, "vs_main", shaderBlendNames[i],
-            layout_gradient_blend, vertexBufferLayoutsShape, 1,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend linear
-        linear_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline linear blend",
-            shader_linear_blend, "vs_main", shaderBlendNames[i],
-            layout_gradient_blend, vertexBufferLayoutsShape, 1,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend image
-        image_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline image blend",
-            shader_image_blend, "vs_main", shaderBlendNames[i],
-            layout_image_blend, vertexBufferLayoutsImage, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateShape, multisampleState);
-        // blend scene
-        scene_blend[i] = createRenderPipeline(
-            context.device, "The render pipeline scene blend",
-            shader_scene_blend, "vs_main", shaderBlendNames[i],
-            layout_scene_blend, vertexBufferLayoutsImage, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
-            depthStencilStateScene, multisampleState);
-    }
-
-    // compose shader names
-    const char* shaderComposeNames[] {
-        "fs_main_None",
-        "fs_main_AlphaMask",
-        "fs_main_InvAlphaMask",
-        "fs_main_LumaMask",
-        "fs_main_InvLumaMask",
-        "fs_main_AddMask",
-        "fs_main_SubtractMask",
-        "fs_main_IntersectMask",
-        "fs_main_DifferenceMask",
-        "fs_main_LightenMask",
-        "fs_main_DarkenMask"
-    };
-
-    // compose shader blend states
-    const WGPUBlendState composeBlends[] {
-        blendStateNrm, // None
-        blendStateNrm, // AlphaMask
-        blendStateNrm, // InvAlphaMask
-        blendStateNrm, // LumaMask
-        blendStateNrm, // InvLumaMask
-        blendStateSrc, // AddMask
-        blendStateSrc, // SubtractMask
-        blendStateSrc, // IntersectMask
-        blendStateSrc, // DifferenceMask
-        blendStateSrc, // LightenMask
-        blendStateSrc  // DarkenMask
-    };
-
-    // render pipeline scene composition
-    for (uint32_t i = 0; i < 11; i++) {
-        scene_compose[i] = createRenderPipeline(
-            context.device, "The render pipeline scene composition",
-            shader_scene_compose, "vs_main", shaderComposeNames[i],
-            layout_scene_compose, vertexBufferLayoutsImage, 2,
-            WGPUColorWriteMask_All, offscreenTargetFormat, composeBlends[i],
-            depthStencilStateScene, multisampleState);
-    }
+    // js-seq: the 90 blend and 11 compose pipelines are NOT created here any more.
+    // They were 101 of the 125 eager pipelines, and each one is a blocking
+    // MSL/DXIL/SPIR-V compile on the main thread — ~10s of cold start on macOS for
+    // variants a given app almost never draws (a typical UI needs Normal blend and
+    // None compose). They are created on first use by the blendXxx()/sceneCompose()
+    // accessors below instead. release() already loops the whole array and skips
+    // nulls, so teardown is unchanged.
 
     // render pipeline blit
     blit = createRenderPipeline(
@@ -544,6 +515,120 @@ void WgPipelines::initialize(WgContext& context)
         depthStencilStateScene, multisampleStateX1);
 
 }
+
+// js-seq: lazy blend/compose pipelines.
+//
+// Each accessor compiles its variant on first use and memoises it in the same
+// array initialize() used to fill eagerly, so callers see identical handles and
+// release() is untouched. The cost moves from startup to the first frame that
+// actually draws with that blend mode — one compile, once per process, and only
+// for modes the content really uses.
+//
+// NOT thread-safe, deliberately: every caller is WgCompositor on the render
+// thread, which is where initialize() ran too. If a second thread ever renders,
+// these need a lock (or a pre-warm pass) — a torn read here would hand WebGPU a
+// half-built pipeline.
+WGPURenderPipeline WgPipelines::blendSolid(WgContext& context, uint32_t idx)
+{
+    assert(idx < 18);
+    if (!solid_blend[idx]) {
+        solid_blend[idx] = createRenderPipeline(
+            context.device, "The render pipeline solid blend",
+            shader_solid_blend, "vs_main", shaderBlendNames[idx],
+            layout_solid_blend, vertexBufferLayoutsSolid, 2,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
+            depthStencilShape(), multisampleState);
+    }
+    return solid_blend[idx];
+}
+
+
+WGPURenderPipeline WgPipelines::blendRadial(WgContext& context, uint32_t idx)
+{
+    assert(idx < 18);
+    if (!radial_blend[idx]) {
+        radial_blend[idx] = createRenderPipeline(
+            context.device, "The render pipeline radial blend",
+            shader_radial_blend, "vs_main", shaderBlendNames[idx],
+            layout_gradient_blend, vertexBufferLayoutsShape, 1,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
+            depthStencilShape(), multisampleState);
+    }
+    return radial_blend[idx];
+}
+
+
+WGPURenderPipeline WgPipelines::blendLinear(WgContext& context, uint32_t idx)
+{
+    assert(idx < 18);
+    if (!linear_blend[idx]) {
+        linear_blend[idx] = createRenderPipeline(
+            context.device, "The render pipeline linear blend",
+            shader_linear_blend, "vs_main", shaderBlendNames[idx],
+            layout_gradient_blend, vertexBufferLayoutsShape, 1,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
+            depthStencilShape(), multisampleState);
+    }
+    return linear_blend[idx];
+}
+
+
+WGPURenderPipeline WgPipelines::blendImage(WgContext& context, uint32_t idx)
+{
+    assert(idx < 18);
+    if (!image_blend[idx]) {
+        image_blend[idx] = createRenderPipeline(
+            context.device, "The render pipeline image blend",
+            shader_image_blend, "vs_main", shaderBlendNames[idx],
+            layout_image_blend, vertexBufferLayoutsImage, 2,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
+            depthStencilShape(), multisampleState);
+    }
+    return image_blend[idx];
+}
+
+
+WGPURenderPipeline WgPipelines::blendScene(WgContext& context, uint32_t idx)
+{
+    assert(idx < 18);
+    if (!scene_blend[idx]) {
+        scene_blend[idx] = createRenderPipeline(
+            context.device, "The render pipeline scene blend",
+            shader_scene_blend, "vs_main", shaderBlendNames[idx],
+            layout_scene_blend, vertexBufferLayoutsImage, 2,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateSrc,
+            depthStencilScene(), multisampleState);
+    }
+    return scene_blend[idx];
+}
+
+
+WGPURenderPipeline WgPipelines::sceneCompose(WgContext& context, uint32_t idx)
+{
+    assert(idx < 11);
+    if (!scene_compose[idx]) {
+        scene_compose[idx] = createRenderPipeline(
+            context.device, "The render pipeline scene composition",
+            shader_scene_compose, "vs_main", shaderComposeNames[idx],
+            layout_scene_compose, vertexBufferLayoutsImage, 2,
+            WGPUColorWriteMask_All, offscreenTargetFormat, composeBlends[idx],
+            depthStencilScene(), multisampleState);
+    }
+    return scene_compose[idx];
+}
+
+
+WGPUDepthStencilState WgPipelines::depthStencilShape()
+{
+    return makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_NotEqual, WGPUStencilOperation_Zero);
+}
+
+
+WGPUDepthStencilState WgPipelines::depthStencilScene()
+{
+    return makeDepthStencilState(WGPUCompareFunction_Always, WGPUOptionalBool_False, WGPUCompareFunction_Always, WGPUStencilOperation_Zero);
+}
+
 
 void WgPipelines::releaseGraphicHandles(WgContext& context)
 {
