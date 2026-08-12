@@ -92,9 +92,11 @@ private:
     void clipStrokes(WgContext& context, WgShape* rdata);
 
     // images
-    void drawImage(WgContext& context, WgImage* rdata);
+    // js-seq: pipelineOverride swaps in a fixed-function blend variant of the same shader
+    // (Multiply / Add) so those paints avoid blendImage's per-paint target copy.
+    void drawImage(WgContext& context, WgImage* rdata, WGPURenderPipeline pipelineOverride = nullptr);
     void blendImage(WgContext& context, WgImage* rdata, BlendMethod blendMethod);
-    void clipImage(WgContext& context, WgImage* rdata);
+    void clipImage(WgContext& context, WgImage* rdata, WGPURenderPipeline pipelineOverride = nullptr);
 
     // scenes
     void drawScene(WgContext& context, WgRenderTarget* scene, WgCompose* compose);

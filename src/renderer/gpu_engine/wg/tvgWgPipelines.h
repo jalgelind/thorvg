@@ -31,9 +31,9 @@
 // around WgCanvas::target() and clear it after. Not thread-safe: initialize()
 // runs on the caller's thread and so does the callback.
 // WG_PIPELINE_TOTAL is nominal; if it drifts from the real count the bar just
-// saturates early, which is cosmetic. Keep it in step with initialize(): 27 single
+// saturates early, which is cosmetic. Keep it in step with initialize(): 31 single
 // pipelines plus the 11 scene compositions. The blend variants are made on first use.
-constexpr uint32_t WG_PIPELINE_TOTAL = 38;
+constexpr uint32_t WG_PIPELINE_TOTAL = 42;
 extern void (*wgPipelineProgressHook)(uint32_t created, uint32_t total);
 extern uint32_t wgPipelineProgressCount;
 
@@ -104,6 +104,13 @@ public:
     WGPURenderPipeline linear_conv{}; // convex geometry (no stencil)
     WGPURenderPipeline image{};
     WGPURenderPipeline image_direct{}; // image geometry (no stencil)
+    // js-seq: `image` (clipped) and `image_direct` with fixed-function Multiply / Add instead
+    // of the read-back blend shader -- see initialize() for the equivalence and its
+    // opaque-destination precondition.
+    WGPURenderPipeline image_mul_hw{};
+    WGPURenderPipeline image_add_hw{};
+    WGPURenderPipeline image_mul_hw_direct{};
+    WGPURenderPipeline image_add_hw_direct{};
     WGPURenderPipeline scene{};
     // pipelines custom blend
     WGPURenderPipeline solid_blend[18]{};
