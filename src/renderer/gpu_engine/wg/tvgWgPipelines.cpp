@@ -54,6 +54,31 @@ const WGPUBlendComponent blendComponentNrm { .operation = WGPUBlendOperation_Add
 const WGPUBlendState blendStateSrc { .color = blendComponentSrc, .alpha = blendComponentSrc };
 const WGPUBlendState blendStateNrm { .color = blendComponentNrm, .alpha = blendComponentNrm };
 
+// js-seq: FIXED-FUNCTION equivalents of the two blend modes RGB-subpixel text uses, so
+// those paints stop taking the read-back path in WgCompositor::blendImage — which per
+// paint ends the render pass, copies the WHOLE render target to targetTemp0, and starts a
+// new pass (and every pass end resolves the 4x MSAA attachment). Measured in the editor at
+// 984 such paints per frame: 26.0 ms of encode against 1.1 ms with them gone.
+//
+// Equivalence, from the shaders these replace (tvgWgShaderSrc.cpp), whose pipeline is
+// blendStateSrc — i.e. the shader's output IS the result:
+//   fs_main_Multiply: Rc = mix(Sc, Sc * Dc/Da, Da), written as vec4(Rc, 1.0)
+//   fs_main_Add:      Rc = min(One, Sc + Dc),       written as vec4(Rc, 1.0)
+// With an OPAQUE destination (Da == 1) Multiply collapses to Sc*Dc, which is exactly
+// (srcFactor=Dst, dstFactor=Zero); Add is (One, One) and RGBA8Unorm clamps for free, which
+// is the min(). Alpha keeps the destination's (Zero, One) rather than writing the shader's
+// literal 1.0 — identical whenever Da == 1, and it cannot punch a hole if it is not.
+//
+// Da == 1 IS THE PRECONDITION and it is not checked here (the renderer cannot see it). It
+// holds because the only caller is the subpixel text pair, which canvas.cpp's
+// subpixelEligible() already refuses unless targetOpaque — the same S0 caveat documented
+// there. Restricted to IMAGE paints for that reason; shapes keep the read-back path.
+const WGPUBlendComponent blendComponentMulHw  { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_Dst,  .dstFactor = WGPUBlendFactor_Zero };
+const WGPUBlendComponent blendComponentAddHw  { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One,  .dstFactor = WGPUBlendFactor_One };
+const WGPUBlendComponent blendComponentKeepDa { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_Zero, .dstFactor = WGPUBlendFactor_One };
+const WGPUBlendState blendStateMulHw { .color = blendComponentMulHw, .alpha = blendComponentKeepDa };
+const WGPUBlendState blendStateAddHw { .color = blendComponentAddHw, .alpha = blendComponentKeepDa };
+
 // blend shader names
 const char* shaderBlendNames[] {
     "fs_main_Normal",
@@ -439,6 +464,19 @@ void WgPipelines::initialize(WgContext& context)
         layout_image, vertexBufferLayoutsImage, 2,
         WGPUColorWriteMask_All, offscreenTargetFormat, blendStateNrm,
         depthStencilStateShape, multisampleState);
+    // js-seq: same shader and layout as `image`; only the fixed-function blend differs.
+    image_mul_hw = createRenderPipeline(
+        context.device, "The render pipeline image multiply (hw blend)",
+        shader_image, "vs_main", "fs_main",
+        layout_image, vertexBufferLayoutsImage, 2,
+        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateMulHw,
+        depthStencilStateShape, multisampleState);
+    image_add_hw = createRenderPipeline(
+        context.device, "The render pipeline image add (hw blend)",
+        shader_image, "vs_main", "fs_main",
+        layout_image, vertexBufferLayoutsImage, 2,
+        WGPUColorWriteMask_All, offscreenTargetFormat, blendStateAddHw,
+        depthStencilStateShape, multisampleState);
     // render pipeline scene
     scene = createRenderPipeline(
         context.device, "The render pipeline scene",
@@ -655,6 +693,8 @@ void WgPipelines::releaseGraphicHandles(WgContext& context)
     }
     // pipelines normal blend
     releaseRenderPipeline(scene);
+    releaseRenderPipeline(image_add_hw);
+    releaseRenderPipeline(image_mul_hw);
     releaseRenderPipeline(image);
     releaseRenderPipeline(linear_conv);
     releaseRenderPipeline(radial_conv);

@@ -102,6 +102,11 @@ public:
     WGPURenderPipeline radial_conv{}; // convex geometry (no stencil)
     WGPURenderPipeline linear_conv{}; // convex geometry (no stencil)
     WGPURenderPipeline image{};
+    // js-seq: `image` with fixed-function Multiply / Add instead of the read-back blend
+    // shader — see the blend states in tvgWgPipelines.cpp for the equivalence and its
+    // opaque-destination precondition.
+    WGPURenderPipeline image_mul_hw{};
+    WGPURenderPipeline image_add_hw{};
     WGPURenderPipeline scene{};
     // pipelines custom blend
     WGPURenderPipeline solid_blend[18]{};

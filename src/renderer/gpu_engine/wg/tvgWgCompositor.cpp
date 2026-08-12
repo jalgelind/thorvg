@@ -23,6 +23,13 @@
 #include "tvgWgCompositor.h"
 #include "tvgWgShaderTypes.h"
 #include <iostream>
+#include <cstdlib>
+
+// js-seq: NSEQ_NO_HW_BLEND=1 forces Multiply/Add back through the read-back blend SHADER
+// (blendImage). The two paths are meant to be pixel-identical over an opaque destination —
+// this is how you check that claim, and how you bisect a text-rendering report to this
+// patch rather than to the rasterizer. See tvgWgPipelines.cpp blendStateMulHw.
+static const bool gWgNoHwBlend = (std::getenv("NSEQ_NO_HW_BLEND") != nullptr);
 
 void WgCompositor::updateViewMat(WgContext& context, uint32_t width, uint32_t height)
 {
@@ -326,16 +333,29 @@ void WgCompositor::renderImage(WgContext& context, WgRenderDataPicture* renderDa
 {
     assert(renderData);
     assert(renderPassEncoder);
+    // js-seq: Multiply and Add are expressible as FIXED-FUNCTION blend, so they skip
+    // blendImage's per-paint "end pass, copy the whole target, restart pass" entirely.
+    // This is the hot path for RGB-subpixel text, which draws every string as a
+    // Multiply + Add pair. Resolved BEFORE the clip test because both branches can carry
+    // it — clip and blend are no longer either/or.
+    // Precondition (opaque destination) and the algebra: tvgWgPipelines.cpp blendStateMulHw.
+    WGPURenderPipeline hwBlend = nullptr;
+    if (!gWgNoHwBlend) {
+        if (blendMethod == BlendMethod::Multiply)  hwBlend = pipelines.image_mul_hw;
+        else if (blendMethod == BlendMethod::Add)  hwBlend = pipelines.image_add_hw;
+    }
     // apply clip path if necessary
     if (renderData->clips.count != 0) {
         renderClipPath(context, renderData);
-        clipImage(context, renderData);
+        clipImage(context, renderData, hwBlend);   // nullptr ⇒ unchanged behaviour
         clearClipPath(context, renderData);
+    } else if (hwBlend) {
+        drawImage(context, renderData, hwBlend);
     // use custom blending
-    } else if (blendMethod != BlendMethod::Normal)
+    } else if (blendMethod != BlendMethod::Normal) {
         blendImage(context, renderData, blendMethod);
     // use direct hardware blending
-    else drawImage(context, renderData);
+    } else drawImage(context, renderData);
 }
 
 
@@ -681,7 +701,7 @@ void WgCompositor::clipStrokes(WgContext& context, WgRenderDataShape* renderData
 }
 
 
-void WgCompositor::drawImage(WgContext& context, WgRenderDataPicture* renderData)
+void WgCompositor::drawImage(WgContext& context, WgRenderDataPicture* renderData, WGPURenderPipeline pipelineOverride)
 {
     assert(renderData);
     assert(renderPassEncoder);
@@ -698,7 +718,7 @@ void WgCompositor::drawImage(WgContext& context, WgRenderDataPicture* renderData
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, bindGroupViewMat, 0, nullptr);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 1, stageBufferPaint[settings.bindGroupInd], 0, nullptr);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 2, renderData->imageBindGroup, 0, nullptr);
-    wgpuRenderPassEncoderSetPipeline(renderPassEncoder, pipelines.image);
+    wgpuRenderPassEncoderSetPipeline(renderPassEncoder, pipelineOverride ? pipelineOverride : pipelines.image);
     drawMeshImage(context, &renderData->meshData);
 }
 
@@ -732,7 +752,7 @@ void WgCompositor::blendImage(WgContext& context, WgRenderDataPicture* renderDat
 };
 
 
-void WgCompositor::clipImage(WgContext& context, WgRenderDataPicture* renderData)
+void WgCompositor::clipImage(WgContext& context, WgRenderDataPicture* renderData, WGPURenderPipeline pipelineOverride)
 {
     assert(renderData);
     assert(renderPassEncoder);
@@ -754,7 +774,12 @@ void WgCompositor::clipImage(WgContext& context, WgRenderDataPicture* renderData
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, bindGroupViewMat, 0, nullptr);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 1, stageBufferPaint[settings.bindGroupInd], 0, nullptr);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 2, renderData->imageBindGroup, 0, nullptr);
-    wgpuRenderPassEncoderSetPipeline(renderPassEncoder, pipelines.image);
+    // js-seq: honouring the paint's blend HERE is what un-breaks clip-vs-blend. It used to
+    // be either/or — the blend was a separate read-back shader pass and this branch simply
+    // replaced it — which is why canvas.cpp routed any subpixel string straddling a clip to
+    // the SW bitmap path (re-uploaded every frame). As fixed-function pipeline state it
+    // composes with the stencil clip for free.
+    wgpuRenderPassEncoderSetPipeline(renderPassEncoder, pipelineOverride ? pipelineOverride : pipelines.image);
     drawMeshImage(context, &renderData->meshData);
 }
 
