@@ -42,6 +42,8 @@ struct PictureImpl : Picture
     float w = 0, h = 0;
     FilterMethod filter = FilterMethod::Bilinear;
     bool resizing = false;
+    void* externalTexture = nullptr;  //js-seq: borrowed native GPU texture (WGPUTexture), zero-copy
+    uint32_t extW = 0, extH = 0;
 
     PictureImpl() : impl(Paint::Impl(this))
     {
@@ -66,7 +68,11 @@ struct PictureImpl : Picture
 
         auto pivot = Point{-origin.x * float(w), -origin.y * float(h)};
 
-        if (bitmap) {
+        if (externalTexture) {
+            //js-seq: borrowed external GPU texture — no pixel upload, composite in z-order
+            auto m = transform * Matrix{1, 0, pivot.x, 0, 1, pivot.y, 0, 0, 1};
+            impl.rd = renderer->prepare(externalTexture, extW, extH, impl.rd, m, clips, opacity, flag);
+        } else if (bitmap) {
             if (bitmap->cs == ColorSpace::Unknown) {
                 TVGERR("RENDERER", "Unknown colorspace picture data");
                 return false;
@@ -281,7 +287,9 @@ struct PictureImpl : Picture
     {
         auto ret = true;
 
-        if (bitmap) {
+        //js-seq: an external-texture picture renders as an image too (update() set impl.rd
+        //via prepare(externalTexture,...)); without this it would be prepared but never drawn.
+        if (bitmap || externalTexture) {
             renderer->blend(impl.blendMethod);
             return renderer->renderImage(impl.rd);
         } else if (vector) {

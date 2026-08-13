@@ -221,6 +221,27 @@ RenderData WgRenderer::prepare(RenderSurface* surface, RenderData data, const Ma
 }
 
 
+RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
+{
+    //js-seq: import a borrowed external GPU texture as a zero-copy image (Picture::loadExternal).
+    auto rdp = data ? (WgRenderDataPicture*)data : mRenderDataPicturePool.allocate(mContext);
+
+    rdp->viewport = vport;
+    rdp->transform = transform;
+    if (!data || (flags & (RenderUpdateFlag::Blend | RenderUpdateFlag::Color)))
+        rdp->renderSettings.update(mContext, ColorSpace::ABGR8888S, opacity);
+
+    if (!data || (flags & (RenderUpdateFlag::Transform | RenderUpdateFlag::Path | RenderUpdateFlag::Image))) {
+        rdp->releaseTexture(mTextures, mContext);   //release any prior image (normal → manager, external → ours)
+        rdp->setExternalImage(mContext, (WGPUTexture)nativeTexture, w, h, transform);
+    }
+
+    if (flags & RenderUpdateFlag::Clip) rdp->updateClips(clips);
+
+    return rdp;
+}
+
+
 bool WgRenderer::preRender()
 {
     if (mContext.invalid()) return false;

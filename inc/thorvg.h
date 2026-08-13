@@ -1707,6 +1707,23 @@ struct TVG_API Picture : Paint
     Result load(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs, bool copy = false) noexcept;
 
     /**
+     * @brief Imports an external, already-resident GPU texture as the picture's image source.
+     *
+     * Unlike load(), no pixel upload occurs — the picture references the given native GPU
+     * texture directly (zero-copy) and composites it in scene z-order. The texture is
+     * BORROWED: ThorVG does not take ownership and never releases it; the caller must keep
+     * it alive while the picture is drawn. WebGPU backend only: @p nativeTexture is a
+     * WGPUTexture and must be an RGBA8Unorm texture (interpreted as ColorSpace::ABGR8888S).
+     *
+     * @param[in] nativeTexture The native GPU texture handle (WGPUTexture on the WebGPU backend).
+     * @param[in] w The width of the texture in pixels.
+     * @param[in] h The height of the texture in pixels.
+     *
+     * @note js-seq local extension (not upstream ThorVG).
+     */
+    Result loadExternal(void* nativeTexture, uint32_t w, uint32_t h) noexcept;
+
+    /**
      * @brief Sets the asset resolver callback for handling external resources (e.g., images and fonts).
      *
      * This callback is invoked when an external asset reference (such as an image source or file path)
