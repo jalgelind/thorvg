@@ -45,6 +45,10 @@ struct PictureImpl : Picture
     void* externalTexture = nullptr;  //js-seq: borrowed native GPU texture (WGPUTexture), zero-copy
     uint32_t extW = 0, extH = 0;
     ColorSpace externalColorSpace = ColorSpace::ABGR8888S;
+    //js-seq: when set, externalTexture is a COVERAGE mask blended dual-source against this
+    //colour (Picture::blendColor), not an image. Null colour = ordinary image path.
+    RenderColor dualSrcColor{};
+    bool dualSrc = false;
 
     PictureImpl() : impl(Paint::Impl(this))
     {
@@ -73,6 +77,7 @@ struct PictureImpl : Picture
             //js-seq: borrowed external GPU texture — no pixel upload, composite in z-order
             auto m = transform * Matrix{1, 0, pivot.x, 0, 1, pivot.y, 0, 0, 1};
             impl.rd = renderer->prepare(externalTexture, extW, extH, externalColorSpace,
+                                        dualSrc ? &dualSrcColor : nullptr,
                                         impl.rd, m, clips, opacity, flag);
         } else if (bitmap) {
             if (bitmap->cs == ColorSpace::Unknown) {
@@ -215,6 +220,8 @@ struct PictureImpl : Picture
         dup->extW = extW;
         dup->extH = extH;
         dup->externalColorSpace = externalColorSpace;
+        dup->dualSrcColor = dualSrcColor;
+        dup->dualSrc = dualSrc;
         if (externalTexture) PAINT(picture)->mark(RenderUpdateFlag::Image |
                                                         RenderUpdateFlag::Color |
                                                         RenderUpdateFlag::Blend);

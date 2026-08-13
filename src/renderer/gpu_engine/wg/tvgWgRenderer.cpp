@@ -231,7 +231,7 @@ RenderData WgRenderer::prepare(RenderSurface* surface, RenderData data, const Ma
 }
 
 
-RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, ColorSpace cs, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
+RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, ColorSpace cs, const RenderColor* dualSrcColor, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
 {
     //js-seq: import a borrowed external GPU texture as a zero-copy image (Picture::loadExternal).
     auto rdp = data ? (WgRenderDataPicture*)data : mRenderDataPicturePool.allocate(mContext);
@@ -240,6 +240,14 @@ RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, Colo
     rdp->transform = transform;
     if (!data || (flags & (RenderUpdateFlag::Blend | RenderUpdateFlag::Color)))
         rdp->renderSettings.update(mContext, cs, opacity);
+
+    //js-seq: a dual-source paint reads its texture as COVERAGE and takes the ink colour
+    //from the uniform, so the colour rides in settings.color -- the same slot a solid fill
+    //uses. Preserve the INTENT even when the pipeline is unavailable: the compositor
+    //must then skip this coverage paint, never reinterpret its RGB as ordinary colour.
+    //Callers query WgCanvas::supportsDualSourceBlending() before choosing this payload.
+    rdp->dualSrc = dualSrcColor != nullptr;
+    if (rdp->dualSrc) rdp->renderSettings.settings.color.update(*dualSrcColor);
 
     if (!data || (flags & (RenderUpdateFlag::Transform | RenderUpdateFlag::Path | RenderUpdateFlag::Image))) {
         rdp->releaseTexture(mTextures, mContext);   //release any prior image (normal → manager, external → ours)

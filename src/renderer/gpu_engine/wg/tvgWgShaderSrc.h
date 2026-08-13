@@ -37,6 +37,9 @@ extern const char* cShaderSrc_Solid_Blend;
 extern const char* cShaderSrc_Linear_Blend;
 extern const char* cShaderSrc_Radial_Blend;
 extern const char* cShaderSrc_Image_Blend;
+//js-seq: one-draw RGB-subpixel text. Null-checked by the caller because it is only
+//compiled when the device has WGPUFeatureName_DualSourceBlending (an OPTIONAL feature).
+extern const char* cShaderSrc_ImageDualSrc;
 extern const char* cShaderSrc_Scene_Blend;
 extern const char* cShaderSrc_BlendFuncs;
 // shaders scene compose

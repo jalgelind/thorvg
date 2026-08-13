@@ -1729,6 +1729,37 @@ struct TVG_API Picture : Paint
                         ColorSpace cs = ColorSpace::ABGR8888S) noexcept;
 
     /**
+     * @brief Draws this picture's texture as a DUAL-SOURCE blended coverage mask (js-seq).
+     *
+     * The texture is then read as a three-channel coverage a3 rather than as colour, and
+     * composited as dst = c*a3 + dst*(1 - a3) in ONE draw. That is the per-channel lerp
+     * RGB-subpixel text needs and which a premultiplied quad -- carrying a single alpha --
+     * cannot express; without this it takes a Multiply(1-a3) + Add(c*a3) pair of paints.
+     *
+     * The colour arrives here, per paint, precisely because it is no longer in the
+     * texture's pixels.
+     *
+     * This setter records coverage intent; it has no renderer/device context and therefore
+     * does not report pipeline support. Query WgCanvas::supportsDualSourceBlending() before
+     * committing to coverage-only data.
+     *
+     * @retval Result::InsufficientCondition if this is not an external-texture picture.
+     *
+     * @note js-seq local extension (not upstream ThorVG). WebGPU backend only.
+     * @note Duplicating an external picture copies the borrowed handle and coverage
+     * intent; both pictures require the caller to retain the same texture.
+     */
+    Result blendColor(uint8_t r, uint8_t g, uint8_t b) noexcept;
+
+    /**
+     * @brief Clears coverage-mask intent and restores ordinary image rendering.
+     *
+     * @retval Result::InsufficientCondition if this is not an external-texture picture.
+     * @note js-seq local extension (not upstream ThorVG).
+     */
+    Result clearBlendColor() noexcept;
+
+    /**
      * @brief Sets the asset resolver callback for handling external resources (e.g., images and fonts).
      *
      * This callback is invoked when an external asset reference (such as an image source or file path)
@@ -2480,6 +2511,16 @@ struct TVG_API WgCanvas final : Canvas
      * @see Canvas::sync()
      */
     Result target(const Context& context, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0) noexcept;
+
+    /**
+     * @brief Returns whether this targeted canvas created a usable dual-source image pipeline.
+     *
+     * This is stronger than the WebGPU device feature bit: it is false when pipeline
+     * creation failed or the canvas has not been successfully targeted.
+     *
+     * @note js-seq local extension (not upstream ThorVG).
+     */
+    bool supportsDualSourceBlending() const noexcept;
 
     /**
      * @brief Creates a new WebGPU Canvas object with optional rendering engine settings.
