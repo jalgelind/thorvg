@@ -286,6 +286,7 @@ void WgImage::reset()
     this->filter = FilterMethod::Bilinear;
     this->stamp = 0;
     setting.settings.options.vec[1] = 0.0f;   //js-seq: see setupExternal()
+    dualSrc = false;
 }
 
 void WgImage::release(WgContext& context)

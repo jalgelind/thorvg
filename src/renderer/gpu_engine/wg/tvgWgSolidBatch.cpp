@@ -37,6 +37,8 @@ static inline bool eligible(const WgImage* rdata, BlendMethod blendMethod)
     if (blendMethod != BlendMethod::Normal) return false;
     if (rdata->viewport.invalid() || !rdata->clips.empty() || !rdata->bindGroup) return false;
     if (rdata->mesh.vbuffer.empty() || rdata->mesh.ibuffer.empty()) return false;
+    // js-seq: a batch draws with image_direct, which would show a coverage mask as colour.
+    if (rdata->dualSrc) return false;
     return true;
 }
 

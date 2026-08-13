@@ -474,6 +474,18 @@ void WgCompositor::renderImage(WgContext& context, WgImage* rdata, BlendMethod b
         if (blendMethod == BlendMethod::Multiply) hwBlend = clipped ? pipelines.image_mul_hw : pipelines.image_mul_hw_direct;
         else if (blendMethod == BlendMethod::Add) hwBlend = clipped ? pipelines.image_add_hw : pipelines.image_add_hw_direct;
     }
+    // js-seq: a dual-source paint replaces that PAIR with one draw -- the fragment emits
+    // both operands and the blender does dst = c*a3 + dst*(1-a3). It wins over the
+    // Multiply/Add selection above because it IS the pair, done once. Deliberately NOT
+    // gated on gWgNoHwBlend: that escape hatch exists to fall back to the shader-blend
+    // path, which cannot express a per-channel lerp at all.
+    if (rdata->dualSrc) {
+        // Coverage RGB is not colour data. If the dedicated pipeline is absent (a device
+        // without the optional feature), skipping the paint is the only safe last line of
+        // defence; ordinary source-over would show coverage as a coloured rectangle.
+        hwBlend = clipped ? pipelines.image_dualsrc : pipelines.image_dualsrc_direct;
+        if (!hwBlend) return;
+    }
     // apply clip path if necessary
     if (clipped) {
         renderClipPath(context, rdata);

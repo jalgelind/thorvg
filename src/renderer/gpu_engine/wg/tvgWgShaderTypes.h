@@ -81,8 +81,11 @@ struct WgShaderTypePaintSettings
     WgShaderTypeVec4f options;
     // gradient settings (linear/radial)
     WgShaderTypeGradSettings gradient;
+    // js-seq: the ink colour of a dual-source coverage paint (Picture::blendColor), RGB in
+    // [0, 1]. Read only by cShaderSrc_ImageDualSrc, whose PaintSettings mirrors this layout.
+    WgShaderTypeVec4f color;
     // align to 256 bytes (see webgpu spec: minUniformBufferOffsetAlignment)
-    uint8_t _padding[256 - sizeof(options) - sizeof(gradient)];
+    uint8_t _padding[256 - sizeof(options) - sizeof(gradient) - sizeof(color)];
 };
 // see webgpu spec: 3.6.2. Limits - minUniformBufferOffsetAlignment (256)
 static_assert(sizeof(WgShaderTypePaintSettings) == 256, "Uniform shader data type size must be aligned to 256 bytes");

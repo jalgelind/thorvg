@@ -136,6 +136,11 @@ struct WgImage : WgPaint
     // js-seq: non-null when `texture` is a BORROWED external texture (Picture::loadExternal).
     // The image then owns this view and `bindGroup`, never `texture` itself.
     WGPUTextureView externalView{};
+    // js-seq: draw this texture as a dual-source COVERAGE mask against setting's colour
+    // (Picture::blendColor) instead of as an image. Kept even on a device without
+    // DualSourceBlending: the compositor then skips the paint rather than show coverage
+    // as colour. reset() clears it, so a recycled image never inherits it.
+    bool dualSrc = false;
 
     void update(const RenderSurface* surface, const Matrix& transform);
     void setup(WGPUTexture texture, WGPUBindGroup bindGroup, const RenderSurface* surface, FilterMethod filter, uint16_t stamp);

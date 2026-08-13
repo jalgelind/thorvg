@@ -108,6 +108,7 @@ private:
     void clearClipPath(WgContext& context, WgPaint* paint);
     void updateViewMat(WgContext& context, uint32_t width, uint32_t height);
 public:
+    bool dualSourceAvailable() const { return pipelines.image_dualsrc && pipelines.image_dualsrc_direct; }
     void initialize(WgContext& context, uint32_t width, uint32_t height);
     void initPools(WgContext& context);
     void release(WgContext& context);

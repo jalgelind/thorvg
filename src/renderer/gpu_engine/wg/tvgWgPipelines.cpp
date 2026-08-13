@@ -24,6 +24,8 @@
 #include "tvgWgPipelines.h"
 #include <cstring>
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 
 static const char* shaderBlendNames[]{
     "fs_main_Normal",
@@ -265,6 +267,12 @@ void WgPipelines::initialize(WgContext& context)
     const WGPUBlendComponent blendComponentKeepDa { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_Zero, .dstFactor = WGPUBlendFactor_One };
     const WGPUBlendState blendStateMulHw { .color = blendComponentMulHw, .alpha = blendComponentKeepDa };
     const WGPUBlendState blendStateAddHw { .color = blendComponentAddHw, .alpha = blendComponentKeepDa };
+    // js-seq: the one-draw form of that Multiply/Add pair. The fragment emits both operands
+    // (src0 = col*a3, src1 = a3) and this combines them as dst = src0 + dst*(1 - src1) --
+    // the per-channel lerp RGB-subpixel text needs, which a single premultiplied alpha
+    // cannot express. Alpha keeps Da for the same reason the pair does.
+    const WGPUBlendComponent blendComponentDualSrc { .operation = WGPUBlendOperation_Add, .srcFactor = WGPUBlendFactor_One, .dstFactor = WGPUBlendFactor_OneMinusSrc1 };
+    const WGPUBlendState blendStateDualSrc { .color = blendComponentDualSrc, .alpha = blendComponentKeepDa };
 
     const WgBindGroupLayouts& layouts = context.layouts;
     // bind group layouts helpers
@@ -497,6 +505,28 @@ void WgPipelines::initialize(WgContext& context)
         layout_image, vertexBufferLayoutsImage, 2,
         WGPUColorWriteMask_All, offscreenTargetFormat, blendStateAddHw,
         depthStencilStateScene, multisampleState);
+    //js-seq: DualSourceBlending is an OPTIONAL WebGPU feature. Creating the shader
+    //module at all would raise a validation error on a device without it, so both the
+    //module and the pipeline stay null there and the caller falls back to the pair.
+    const char* forceDualSrcFailure = getenv("NSEQ_THORVG_DUALSRC_PIPELINE_FAIL");
+    if (wgpuDeviceHasFeature(context.device, WGPUFeatureName_DualSourceBlending) &&
+        !(forceDualSrcFailure && forceDualSrcFailure[0] != '0')) {
+        shader_image_dualsrc = createShaderModule(context.device, "The shader image dual-source", cShaderSrc_ImageDualSrc);
+        image_dualsrc = createRenderPipeline(
+            context.device, "The render pipeline image dual-source (subpixel text)",
+            shader_image_dualsrc, "vs_main", "fs_main",
+            layout_image, vertexBufferLayoutsImage, 2,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateDualSrc,
+            depthStencilStateShape, multisampleState);
+        image_dualsrc_direct = createRenderPipeline(
+            context.device, "The render pipeline image dual-source direct (subpixel text)",
+            shader_image_dualsrc, "vs_main", "fs_main",
+            layout_image, vertexBufferLayoutsImage, 2,
+            WGPUColorWriteMask_All, offscreenTargetFormat, blendStateDualSrc,
+            depthStencilStateScene, multisampleState);
+    }
+    if (getenv("NSEQ_WG_DEBUG")) fprintf(stderr, "[wg] js-seq dual-source subpixel pipeline: %s\n",
+        (image_dualsrc && image_dualsrc_direct) ? "created" : "unavailable (feature absent or forced pipeline failure)");
     // render pipeline scene
     scene = createRenderPipeline(
         context.device, "The render pipeline scene",
@@ -633,6 +663,9 @@ void WgPipelines::releaseGraphicHandles(WgContext& context)
     releaseRenderPipeline(scene);
     releaseRenderPipeline(image_add_hw_direct);
     releaseRenderPipeline(image_mul_hw_direct);
+    releaseRenderPipeline(image_dualsrc_direct);
+    releaseRenderPipeline(image_dualsrc);
+    releaseShaderModule(shader_image_dualsrc);
     releaseRenderPipeline(image_add_hw);
     releaseRenderPipeline(image_mul_hw);
     releaseRenderPipeline(image);

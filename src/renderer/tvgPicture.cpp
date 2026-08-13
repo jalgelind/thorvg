@@ -57,6 +57,28 @@ Result Picture::load(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs
 }
 
 
+Result Picture::blendColor(uint8_t r, uint8_t g, uint8_t b) noexcept
+{
+    auto p = to<PictureImpl>(this);
+    if (!p->externalTexture) return Result::InsufficientCondition;
+    p->dualSrcColor = RenderColor{r, g, b, 255};
+    p->dualSrc = true;
+    PAINT(this)->mark(RenderUpdateFlag::Color | RenderUpdateFlag::Blend);
+    return Result::Success;
+}
+
+Result Picture::clearBlendColor() noexcept
+{
+    auto p = to<PictureImpl>(this);
+    if (!p->externalTexture) return Result::InsufficientCondition;
+    if (!p->dualSrc) return Result::Success;
+    p->dualSrc = false;
+    p->dualSrcColor = {};
+    PAINT(this)->mark(RenderUpdateFlag::Color | RenderUpdateFlag::Blend);
+    return Result::Success;
+}
+
+
 Result Picture::loadExternal(void* nativeTexture, uint32_t w, uint32_t h, ColorSpace cs) noexcept
 {
     if (!nativeTexture || w == 0 || h == 0) return Result::InvalidArguments;

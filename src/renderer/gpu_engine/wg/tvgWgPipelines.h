@@ -31,9 +31,10 @@
 // around WgCanvas::target() and clear it after. Not thread-safe: initialize()
 // runs on the caller's thread and so does the callback.
 // WG_PIPELINE_TOTAL is nominal; if it drifts from the real count the bar just
-// saturates early, which is cosmetic. Keep it in step with initialize(): 31 single
-// pipelines plus the 11 scene compositions. The blend variants are made on first use.
-constexpr uint32_t WG_PIPELINE_TOTAL = 42;
+// saturates early, which is cosmetic. Keep it in step with initialize(): 33 single
+// pipelines (2 of them dual-source, only on a device with DualSourceBlending) plus the
+// 11 scene compositions. The blend variants are made on first use.
+constexpr uint32_t WG_PIPELINE_TOTAL = 44;
 extern void (*wgPipelineProgressHook)(uint32_t created, uint32_t total);
 extern uint32_t wgPipelineProgressCount;
 
@@ -53,6 +54,8 @@ private:
     WGPUShaderModule shader_radial_blend{};
     WGPUShaderModule shader_linear_blend{};
     WGPUShaderModule shader_image_blend{};
+    //js-seq: null unless the device has DualSourceBlending (optional feature).
+    WGPUShaderModule shader_image_dualsrc{};
     WGPUShaderModule shader_scene_blend{};
     // shader scene compose
     WGPUShaderModule shader_scene_compose{};
@@ -111,6 +114,11 @@ public:
     WGPURenderPipeline image_add_hw{};
     WGPURenderPipeline image_mul_hw_direct{};
     WGPURenderPipeline image_add_hw_direct{};
+    //js-seq: null unless the device has WGPUFeatureName_DualSourceBlending. Callers
+    //MUST null-check and fall back to the image_mul_hw/image_add_hw pair. Clipped and
+    //direct (no stencil), as for those.
+    WGPURenderPipeline image_dualsrc{};
+    WGPURenderPipeline image_dualsrc_direct{};
     WGPURenderPipeline scene{};
     // pipelines custom blend
     WGPURenderPipeline solid_blend[18]{};
