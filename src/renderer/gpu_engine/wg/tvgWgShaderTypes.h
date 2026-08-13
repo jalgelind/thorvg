@@ -76,7 +76,8 @@ struct WgShaderTypeGradSettings
 // WGSL: struct PaintSettings { options: vec4f, gradient: GradSettings };
 struct WgShaderTypePaintSettings
 {
-    // [0] - color space, [3] - opacity
+    // [0] - color space, [1] - js-seq: 1 = premultiply in the shader (straight-alpha external
+    // texture, see WgImage::setupExternal), [3] - opacity
     WgShaderTypeVec4f options;
     // gradient settings (linear/radial)
     WgShaderTypeGradSettings gradient;

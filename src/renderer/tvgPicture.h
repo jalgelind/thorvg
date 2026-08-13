@@ -42,6 +42,9 @@ struct PictureImpl : Picture
     float w = 0, h = 0;
     FilterMethod filter = FilterMethod::Bilinear;
     bool resizing = false;
+    void* externalTexture = nullptr;  //js-seq: borrowed native GPU texture (WGPUTexture), zero-copy
+    uint32_t extW = 0, extH = 0;
+    ColorSpace externalColorSpace = ColorSpace::ABGR8888S;
 
     PictureImpl() : impl(Paint::Impl(this))
     {
@@ -56,6 +59,9 @@ struct PictureImpl : Picture
 
     bool skip(RenderUpdateFlag flag)
     {
+        //js-seq: an external-texture picture has no loader, but its updates must still run:
+        //skipping them leaves impl.rd unprepared and render() hands the renderer a null image.
+        if (externalTexture) return flag == RenderUpdateFlag::None;
         // The media have its own playback update
         return !loader || (flag == RenderUpdateFlag::None && loader->type != FileType::Media);
     }
@@ -67,7 +73,12 @@ struct PictureImpl : Picture
 
         auto pivot = Point{-origin.x * float(w), -origin.y * float(h)};
 
-        if (bitmap) {
+        if (externalTexture) {
+            //js-seq: borrowed external GPU texture — no pixel upload, composite in z-order
+            auto m = transform * Matrix{1, 0, pivot.x, 0, 1, pivot.y, 0, 0, 1};
+            impl.rd = renderer->prepare(externalTexture, extW, extH, externalColorSpace,
+                                        impl.rd, m, clips, opacity, flag);
+        } else if (bitmap) {
             if (bitmap->cs == ColorSpace::Unknown) {
                 TVGERR("RENDERER", "Unknown colorspace picture data");
                 return false;
@@ -203,6 +214,16 @@ struct PictureImpl : Picture
         dup->h = h;
         dup->filter = filter;
         dup->resizing = resizing;
+        // External pictures duplicate as another BORROWER of the same native
+        // texture. No ownership/refcount is invented here; the public loadExternal
+        // lifetime contract applies independently to both paints.
+        dup->externalTexture = externalTexture;
+        dup->extW = extW;
+        dup->extH = extH;
+        dup->externalColorSpace = externalColorSpace;
+        if (externalTexture) PAINT(picture)->mark(RenderUpdateFlag::Image |
+                                                        RenderUpdateFlag::Color |
+                                                        RenderUpdateFlag::Blend);
 
         return picture;
     }
@@ -276,7 +297,9 @@ struct PictureImpl : Picture
     {
         auto ret = true;
 
-        if (bitmap) {
+        //js-seq: an external-texture picture renders as an image too (update() set impl.rd
+        //via prepare(externalTexture,...)); without this it would be prepared but never drawn.
+        if (bitmap || externalTexture) {
             renderer->blend(impl.blendMethod);
             return renderer->renderImage(impl.rd);
         } else if (vector) {

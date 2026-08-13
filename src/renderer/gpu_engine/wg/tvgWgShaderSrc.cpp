@@ -203,7 +203,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var Sc: vec4f = textureSample(uTextureView, uSampler, in.vTexCoord.xy);
     let So: f32 = uPaintSettings.options.a;
-    return vec4f(Sc.rgb * So, Sc.a * So);
+    // js-seq: options.y is 1 for a straight-alpha external texture (Picture::loadExternal);
+    // every other picture was premultiplied at upload.
+    let rgb = select(Sc.rgb, Sc.rgb * Sc.a, uPaintSettings.options.y > 0.5);
+    return vec4f(rgb * So, Sc.a * So);
 };
 )";
 
@@ -406,7 +409,8 @@ fn getFragData(in: VertexOutput) -> FragData {
     let colorDst = textureSample(uTextureDst, uSamplerDst, in.vScrCoord.xy);
     // fill fragment data
     var data: FragData;
-    data.Sc = colorSrc.rgb;
+    // js-seq: premultiply a straight-alpha external texture, as cShaderSrc_Image does
+    data.Sc = select(colorSrc.rgb, colorSrc.rgb * colorSrc.a, uPaintSettings.options.y > 0.5);
     data.Sa = colorSrc.a;
     data.So = uPaintSettings.options.a;
     data.Dc = colorDst.rgb;

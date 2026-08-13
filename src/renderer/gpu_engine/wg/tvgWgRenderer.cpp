@@ -332,6 +332,29 @@ RenderData WgRenderer::prepare(RenderSurface* surface, RenderData data, const Ma
 }
 
 
+RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, ColorSpace cs, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
+{
+    //js-seq: import a borrowed external GPU texture as a zero-copy image (Picture::loadExternal).
+    auto image = data ? (WgImage*)data : mPaintPool.image();
+    if (!data) flags = RenderUpdateFlag::All;
+
+    image->viewport = vport;
+    image->transform = transform;
+    image->setting.update(cs, opacity);
+
+    if (flags & (RenderUpdateFlag::Transform | RenderUpdateFlag::Image)) image->mesh.imageBox(float(w), float(h), transform);
+
+    if ((flags & RenderUpdateFlag::Image) || !image->externalView || image->texture != (WGPUTexture)nativeTexture) {
+        image->release(mTextures, mContext);   //a prior image: managed or borrowed, each released its own way
+        image->setupExternal(mContext, (WGPUTexture)nativeTexture, cs);
+    }
+
+    if (flags & RenderUpdateFlag::Clip) image->assign(clips);
+
+    return image;
+}
+
+
 bool WgRenderer::preRender()
 {
     if (mContext.invalid()) return false;

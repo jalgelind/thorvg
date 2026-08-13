@@ -251,9 +251,30 @@ void WgImage::setup(WGPUTexture texture, WGPUBindGroup bindGroup, const RenderSu
     this->stamp = texture ? stamp : 0;
 }
 
+void WgImage::setupExternal(WgContext& context, WGPUTexture texture, ColorSpace cs)
+{
+    //js-seq: a BORROWED, app-owned texture bypasses the texture manager entirely: the view and
+    //bind group are ours, the texture never is. Stamp 0 never matches the manager's (>= 1), so
+    //release() cannot hand this texture to it.
+    externalView = context.createTextureView(texture);
+    setup(texture, context.layouts.createBindGroupTexSampled(context.samplerLinearClamp, externalView), nullptr, FilterMethod::Bilinear, 0);
+    //The manager premultiplies an ordinary straight-alpha picture at upload; nothing touches a
+    //borrowed one, so the image shaders premultiply it when options.y says so (reset() clears it).
+    setting.settings.options.vec[1] = (cs == ColorSpace::ABGR8888S) ? 1.0f : 0.0f;
+}
+
+void WgImage::releaseExternal(WgContext& context)
+{
+    if (!externalView) return;
+    context.layouts.releaseBindGroup(bindGroup);
+    context.releaseTextureView(externalView);
+    externalView = nullptr;
+}
+
 void WgImage::release(WgTextureMgr& textures, WgContext& context)
 {
-    if (texture && stamp == textures.stamp) textures.release(context, surface, filter, texture);
+    if (externalView) releaseExternal(context);
+    else if (texture && stamp == textures.stamp) textures.release(context, surface, filter, texture);
     reset();
 }
 
@@ -264,10 +285,12 @@ void WgImage::reset()
     this->surface = nullptr;
     this->filter = FilterMethod::Bilinear;
     this->stamp = 0;
+    setting.settings.options.vec[1] = 0.0f;   //js-seq: see setupExternal()
 }
 
 void WgImage::release(WgContext& context)
 {
+    releaseExternal(context);
     clips.clear();
     setting.release(context);
     reset();

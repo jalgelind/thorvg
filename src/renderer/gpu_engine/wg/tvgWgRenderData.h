@@ -133,9 +133,14 @@ struct WgImage : WgPaint
     WgMesh mesh;
     uint16_t stamp = 0;
     FilterMethod filter = FilterMethod::Bilinear;
+    // js-seq: non-null when `texture` is a BORROWED external texture (Picture::loadExternal).
+    // The image then owns this view and `bindGroup`, never `texture` itself.
+    WGPUTextureView externalView{};
 
     void update(const RenderSurface* surface, const Matrix& transform);
     void setup(WGPUTexture texture, WGPUBindGroup bindGroup, const RenderSurface* surface, FilterMethod filter, uint16_t stamp);
+    void setupExternal(WgContext& context, WGPUTexture texture, ColorSpace cs);
+    void releaseExternal(WgContext& context);
     void release(WgTextureMgr& textures, WgContext& context);
     void reset();
     void release(WgContext& context) override;
