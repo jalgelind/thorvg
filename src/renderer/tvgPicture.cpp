@@ -62,6 +62,23 @@ Result Picture::load(const uint32_t* data, uint32_t w, uint32_t h, ColorSpace cs
 }
 
 
+Result Picture::loadExternal(void* nativeTexture, uint32_t w, uint32_t h, ColorSpace cs) noexcept
+{
+    if (!nativeTexture || w == 0 || h == 0) return Result::InvalidArguments;
+    if (cs != ColorSpace::ABGR8888 && cs != ColorSpace::ABGR8888S)
+        return Result::NonSupport;
+    auto p = to<PictureImpl>(this);
+    p->externalTexture = nativeTexture;
+    p->extW = w;
+    p->extH = h;
+    p->externalColorSpace = cs;
+    p->w = static_cast<float>(w);
+    p->h = static_cast<float>(h);
+    PAINT(this)->mark(RenderUpdateFlag::Image | RenderUpdateFlag::Color);
+    return Result::Success;
+}
+
+
 Result Picture::resolver(std::function<bool(Paint* paint, const char* src, void* data)> func, void* data) noexcept
 {
     return to<PictureImpl>(this)->set(func, data);

@@ -203,7 +203,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     var Sc: vec4f = textureSample(uTextureView, uSampler, in.vTexCoord.xy);
     let So: f32 = uPaintSettings.options.a;
-    return vec4f(Sc.rgb * Sc.a * So, Sc.a * So);
+    // ColorSpace enum values 0/1 are premultiplied, 2/3 are straight. External
+    // textures and ordinary pictures share this shader, so the producer's declared
+    // alpha encoding must survive all the way to this final sample.
+    let premultiplied = uPaintSettings.options.x < 1.5;
+    let rgb = select(Sc.rgb * Sc.a, Sc.rgb, premultiplied);
+    return vec4f(rgb * So, Sc.a * So);
 };
 )";
 

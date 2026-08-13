@@ -119,10 +119,16 @@ struct WgRenderDataPicture: public WgRenderDataPaint
     const RenderSurface* imageSource = nullptr;
     FilterMethod imageFilter = FilterMethod::Bilinear;
     uint16_t imageStamp = 0;
+    // js-seq: when non-null, this render data OWNS the view + bindGroup of a BORROWED external
+    // texture (Picture::loadExternal). We must release those (but never the texture) on reuse.
+    WGPUTextureView imageExternalView{};
     WgMeshData meshData{};
 
     void updateSurface(const RenderSurface* surface, const Matrix& transform);
     void setImage(WGPUTexture texture, WGPUBindGroup bindGroup, const RenderSurface* surface, FilterMethod filter, uint16_t stamp);
+    //js-seq: import a borrowed external GPU texture (owns view+bindGroup; never the texture)
+    void setExternalImage(WgContext& context, WGPUTexture texture, uint32_t w, uint32_t h, const Matrix& transform);
+    void releaseExternal(WgContext& context);
     void releaseTexture(WgTextureMgr& textures, WgContext& context);
     void clearImage();
     void release(WgContext& context) override;
