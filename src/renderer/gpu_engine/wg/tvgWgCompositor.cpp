@@ -344,6 +344,14 @@ void WgCompositor::renderImage(WgContext& context, WgRenderDataPicture* renderDa
         if (blendMethod == BlendMethod::Multiply)  hwBlend = pipelines.image_mul_hw;
         else if (blendMethod == BlendMethod::Add)  hwBlend = pipelines.image_add_hw;
     }
+    // js-seq: a dual-source paint replaces that PAIR with one draw -- the fragment emits
+    // both operands and the blender does dst = c*a3 + dst*(1-a3). It wins over the
+    // Multiply/Add selection above because it IS the pair, done once. image_dualsrc is
+    // null on a device without the optional feature, in which case rdp->dualSrc is already
+    // false; the null check is a second guard so a stale flag can never bind a null
+    // pipeline. Deliberately NOT gated on gWgNoHwBlend: that escape hatch exists to fall
+    // back to the shader-blend path, which cannot express a per-channel lerp at all.
+    if (renderData->dualSrc && pipelines.image_dualsrc) hwBlend = pipelines.image_dualsrc;
     // apply clip path if necessary
     if (renderData->clips.count != 0) {
         renderClipPath(context, renderData);

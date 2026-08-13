@@ -231,7 +231,7 @@ RenderData WgRenderer::prepare(RenderSurface* surface, RenderData data, const Ma
 }
 
 
-RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
+RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, const RenderColor* dualSrcColor, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags)
 {
     //js-seq: import a borrowed external GPU texture as a zero-copy image (Picture::loadExternal).
     auto rdp = data ? (WgRenderDataPicture*)data : mRenderDataPicturePool.allocate(mContext);
@@ -240,6 +240,14 @@ RenderData WgRenderer::prepare(void* nativeTexture, uint32_t w, uint32_t h, Rend
     rdp->transform = transform;
     if (!data || (flags & (RenderUpdateFlag::Blend | RenderUpdateFlag::Color)))
         rdp->renderSettings.update(mContext, ColorSpace::ABGR8888S, opacity);
+
+    //js-seq: a dual-source paint reads its texture as COVERAGE and takes the ink colour
+    //from the uniform, so the colour rides in settings.color -- the same slot a solid fill
+    //uses. Only honoured when the device actually has the feature; otherwise the flag stays
+    //false and the caller must fall back to the Multiply/Add pair.
+    rdp->dualSrc = dualSrcColor &&
+                   wgpuDeviceHasFeature(mContext.device, WGPUFeatureName_DualSourceBlending);
+    if (rdp->dualSrc) rdp->renderSettings.settings.color.update(*dualSrcColor);
 
     if (!data || (flags & (RenderUpdateFlag::Transform | RenderUpdateFlag::Path | RenderUpdateFlag::Image))) {
         rdp->releaseTexture(mTextures, mContext);   //release any prior image (normal → manager, external → ours)

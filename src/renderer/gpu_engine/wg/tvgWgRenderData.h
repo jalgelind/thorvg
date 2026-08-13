@@ -122,6 +122,11 @@ struct WgRenderDataPicture: public WgRenderDataPaint
     // js-seq: when non-null, this render data OWNS the view + bindGroup of a BORROWED external
     // texture (Picture::loadExternal). We must release those (but never the texture) on reuse.
     WGPUTextureView imageExternalView{};
+    // js-seq: draw this texture as a dual-source COVERAGE mask against renderSettings'
+    // colour (Picture::blendColor) instead of as an image. False on any device without
+    // DualSourceBlending, so the compositor's null-pipeline check is a second guard, not
+    // the only one.
+    bool dualSrc = false;
     WgMeshData meshData{};
 
     void updateSurface(const RenderSurface* surface, const Matrix& transform);

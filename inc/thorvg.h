@@ -1724,6 +1724,24 @@ struct TVG_API Picture : Paint
     Result loadExternal(void* nativeTexture, uint32_t w, uint32_t h) noexcept;
 
     /**
+     * @brief Draws this picture's texture as a DUAL-SOURCE blended coverage mask (js-seq).
+     *
+     * The texture is then read as a three-channel coverage a3 rather than as colour, and
+     * composited as dst = c*a3 + dst*(1 - a3) in ONE draw. That is the per-channel lerp
+     * RGB-subpixel text needs and which a premultiplied quad -- carrying a single alpha --
+     * cannot express; without this it takes a Multiply(1-a3) + Add(c*a3) pair of paints.
+     *
+     * The colour arrives here, per paint, precisely because it is no longer in the
+     * texture's pixels.
+     *
+     * Requires the device to have DualSourceBlending (an OPTIONAL WebGPU feature). When it
+     * does not, this returns Result::NonSupport and the caller must emit the pair instead.
+     *
+     * @note js-seq local extension (not upstream ThorVG). WebGPU backend only.
+     */
+    Result blendColor(uint8_t r, uint8_t g, uint8_t b) noexcept;
+
+    /**
      * @brief Sets the asset resolver callback for handling external resources (e.g., images and fonts).
      *
      * This callback is invoked when an external asset reference (such as an image source or file path)
