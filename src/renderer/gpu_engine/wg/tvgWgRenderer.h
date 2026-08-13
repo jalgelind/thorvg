@@ -51,8 +51,6 @@ struct WgRenderer : RenderMethod
     Result target(const WgCanvas::Context& ctx, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0);
     //js-seq: supersampling factor — render internally at Nx and downsample to the surface
     //on blit. Call before target(). Clamped to [1,4].
-    void setRenderScale(uint32_t scale) { renderScale = (scale >= 1 && scale <= 4) ? scale : 1; }
-    uint32_t getRenderScale() const { return renderScale; }
 
     //composition
     RenderCompositor* target(const RenderRegion& region, ColorSpace cs, CompositionFlag flags) override;
@@ -114,7 +112,6 @@ private:
     WGPUSurfaceTexture surfaceTexture{};
     WGPUSurface surface{};  // external handle
 
-    uint32_t renderScale = 1;   //js-seq: supersample factor (1 = native; see setRenderScale)
     uint32_t surfaceWidth = 0;  //js-seq: native surface (blit) dims — render targets are Nx this
     uint32_t surfaceHeight = 0;
 };

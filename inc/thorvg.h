@@ -2477,16 +2477,6 @@ struct TVG_API WgCanvas final : Canvas
     Result target(const Context& context, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0) noexcept;
 
     /**
-     * @brief Sets the internal supersampling scale factor (js-seq local extension).
-     *
-     * When scale > 1, the renderer allocates internal render targets at (w*scale, h*scale)
-     * and downsamples to the surface during presentation (anti-aliasing). Call before target().
-     *
-     * @param[in] scale Supersample factor (1 = native, 2 = 2x, …). Clamped to [1, 4].
-     */
-    void setRenderScale(uint32_t scale) noexcept;
-
-    /**
      * @brief Creates a new WebGPU Canvas object with optional rendering engine settings.
      *
      * This method generates a WebGPU canvas instance that can be used for drawing vector graphics.

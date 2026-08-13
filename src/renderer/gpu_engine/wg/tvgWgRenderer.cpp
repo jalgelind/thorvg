@@ -450,10 +450,8 @@ Result WgRenderer::target(const WgCanvas::Context& ctx, void* target, uint32_t w
 
     if (w == 0 || h == 0) return Result::InvalidArguments;
 
-    // js-seq: supersampling — render internally at Nx (rw,rh); the surface stays native
-    // (w,h) and the compositor's blit downsamples the root to it (blit dims = w,h).
-    const uint32_t rw = w * renderScale;
-    const uint32_t rh = h * renderScale;
+    const uint32_t rw = w;
+    const uint32_t rh = h;
 
     // context has been changed, need to recreate all instances
     if ((mContext.device != ctx.device) || (mContext.instance != ctx.instance) || mContext.adapter != ctx.adapter) {
