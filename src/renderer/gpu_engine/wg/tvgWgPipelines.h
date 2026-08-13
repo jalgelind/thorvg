@@ -54,6 +54,8 @@ private:
     WGPUShaderModule shader_radial_blend{};
     WGPUShaderModule shader_linear_blend{};
     WGPUShaderModule shader_image_blend{};
+    //js-seq: null unless the device has DualSourceBlending (optional feature).
+    WGPUShaderModule shader_image_dualsrc{};
     WGPUShaderModule shader_scene_blend{};
     // shader scene compose
     WGPUShaderModule shader_scene_compose{};
@@ -107,6 +109,9 @@ public:
     // opaque-destination precondition.
     WGPURenderPipeline image_mul_hw{};
     WGPURenderPipeline image_add_hw{};
+    //js-seq: null unless the device has WGPUFeatureName_DualSourceBlending. Callers
+    //MUST null-check and fall back to the image_mul_hw/image_add_hw pair.
+    WGPURenderPipeline image_dualsrc{};
     WGPURenderPipeline scene{};
     // pipelines custom blend
     WGPURenderPipeline solid_blend[18]{};

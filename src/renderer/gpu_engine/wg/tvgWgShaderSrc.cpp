@@ -208,6 +208,59 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 )";
 
 //************************************************************************
+// js-seq graphics shader source: image, DUAL-SOURCE blend (RGB-subpixel text)
+//************************************************************************
+//
+// RGB-subpixel text is a per-channel lerp: dst = col*a3 + dst*(1 - a3), where a3 is
+// a THREE-channel coverage. A premultiplied quad carries one alpha, so the canvas
+// used to emit it as a Multiply(1-a3) + Add(col*a3) PAIR of paints -- two draws and
+// two cached textures per string.
+//
+// Dual-source blending does it in one: the fragment emits both blend operands, and
+// the fixed-function unit combines them as (One, OneMinusSrc1). The texture then
+// holds coverage ALONE, which is why the colour has to arrive per paint -- it is no
+// longer baked into the pixels (see WgShaderTypePaintSettings::color, already there
+// for solid fills, and Picture::setBlendColor below).
+const char* cShaderSrc_ImageDualSrc = R"(
+enable dual_source_blending;
+
+struct VertexInput { @location(0) position: vec2f, @location(1) texCoord: vec2f };
+struct VertexOutput { @builtin(position) position: vec4f, @location(0) vTexCoord: vec2f };
+struct PaintSettings { options: vec4f, color: vec4f };
+
+@group(0) @binding(0) var<uniform> uViewMat : mat4x4f;
+@group(1) @binding(0) var<uniform> uPaintSettings : PaintSettings;
+@group(2) @binding(0) var uSampler     : sampler;
+@group(2) @binding(1) var uTextureView : texture_2d<f32>;
+
+struct FragOut {
+    @location(0) @blend_src(0) src0: vec4f,
+    @location(0) @blend_src(1) src1: vec4f,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.position = uViewMat * vec4f(in.position.xy, 0.0, 1.0);
+    out.vTexCoord = in.texCoord;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> FragOut {
+    // The texture is COVERAGE, not colour: rgb is the gamma-corrected per-channel
+    // alpha the text rasterizer produced, alpha is 1 and unused.
+    let a3: vec3f = textureSample(uTextureView, uSampler, in.vTexCoord.xy).rgb;
+    let So: f32 = uPaintSettings.options.a;
+    let col: vec3f = uPaintSettings.color.rgb;
+    var o: FragOut;
+    o.src0 = vec4f(col * a3 * So, 1.0);   // combined with One
+    o.src1 = vec4f(a3 * So, 1.0);         // combined with OneMinusSrc1
+    return o;
+};
+)";
+
+//************************************************************************
 // graphics shader source: scene normal blend
 //************************************************************************
 
