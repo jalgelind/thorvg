@@ -246,6 +246,16 @@ Result WgCanvas::target(const Context& context, void* target, uint32_t w, uint32
     return Result::NonSupport;
 }
 
+bool WgCanvas::supportsDualSourceBlending() const noexcept
+{
+#ifdef THORVG_WG_ENGINE_SUPPORT
+    return pImpl->renderer &&
+           static_cast<WgRenderer*>(pImpl->renderer)->supportsDualSourceBlending();
+#else
+    return false;
+#endif
+}
+
 WgCanvas* WgCanvas::gen(EngineOption op) noexcept
 {
 #ifdef THORVG_WG_ENGINE_SUPPORT

@@ -610,7 +610,7 @@ public:
     virtual RenderData prepare(const RenderShape& rshape, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags, bool clipper) = 0;
     virtual RenderData prepare(RenderSurface* surface, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, FilterMethod filter, RenderUpdateFlag flags) = 0;
     //js-seq: import a borrowed external GPU texture as an image (default no-op for non-GPU engines)
-    virtual RenderData prepare(void* /*nativeTexture*/, uint32_t /*w*/, uint32_t /*h*/, const RenderColor* /*dualSrcColor*/, RenderData /*data*/, const Matrix& /*transform*/, const Array<RenderData>& /*clips*/, uint8_t /*opacity*/, RenderUpdateFlag /*flags*/) { return nullptr; }
+    virtual RenderData prepare(void* /*nativeTexture*/, uint32_t /*w*/, uint32_t /*h*/, ColorSpace /*cs*/, const RenderColor* /*dualSrcColor*/, RenderData /*data*/, const Matrix& /*transform*/, const Array<RenderData>& /*clips*/, uint8_t /*opacity*/, RenderUpdateFlag /*flags*/) { return nullptr; }
     virtual bool postUpdate() = 0;
     virtual bool preRender() = 0;
     virtual bool renderShape(RenderData data) = 0;

@@ -351,7 +351,13 @@ void WgCompositor::renderImage(WgContext& context, WgRenderDataPicture* renderDa
     // false; the null check is a second guard so a stale flag can never bind a null
     // pipeline. Deliberately NOT gated on gWgNoHwBlend: that escape hatch exists to fall
     // back to the shader-blend path, which cannot express a per-channel lerp at all.
-    if (renderData->dualSrc && pipelines.image_dualsrc) hwBlend = pipelines.image_dualsrc;
+    if (renderData->dualSrc) {
+        // Coverage RGB is not colour data. If the dedicated pipeline is absent,
+        // skipping the paint is the only safe last line of defence; ordinary
+        // source-over would reinterpret coverage as a visible coloured rectangle.
+        if (!pipelines.image_dualsrc) return;
+        hwBlend = pipelines.image_dualsrc;
+    }
     // apply clip path if necessary
     if (renderData->clips.count != 0) {
         renderClipPath(context, renderData);

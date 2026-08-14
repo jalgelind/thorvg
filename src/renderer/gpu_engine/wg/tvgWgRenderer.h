@@ -32,7 +32,7 @@ struct WgRenderer : RenderMethod
     bool preUpdate() override;
     RenderData prepare(const RenderShape& rshape, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags, bool clipper) override;
     RenderData prepare(RenderSurface* surface, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, FilterMethod filter, RenderUpdateFlag flags) override;
-    RenderData prepare(void* nativeTexture, uint32_t w, uint32_t h, const RenderColor* dualSrcColor, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags) override;
+    RenderData prepare(void* nativeTexture, uint32_t w, uint32_t h, ColorSpace cs, const RenderColor* dualSrcColor, RenderData data, const Matrix& transform, const Array<RenderData>& clips, uint8_t opacity, RenderUpdateFlag flags) override;
     bool postUpdate() override;
     bool preRender() override;
     bool renderShape(RenderData data) override;
@@ -49,6 +49,7 @@ struct WgRenderer : RenderMethod
     bool intersectsImage(RenderData data, const RenderRegion& region) override;
     bool intersectsShape(RenderData data, const RenderRegion& region) override;
     Result target(const WgCanvas::Context& ctx, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0);
+    bool supportsDualSourceBlending() const { return mCompositor.dualSourceAvailable(); }
 
     //composition
     RenderCompositor* target(const RenderRegion& region, ColorSpace cs, CompositionFlag flags) override;

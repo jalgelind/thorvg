@@ -1713,15 +1713,20 @@ struct TVG_API Picture : Paint
      * texture directly (zero-copy) and composites it in scene z-order. The texture is
      * BORROWED: ThorVG does not take ownership and never releases it; the caller must keep
      * it alive while the picture is drawn. WebGPU backend only: @p nativeTexture is a
-     * WGPUTexture and must be an RGBA8Unorm texture (interpreted as ColorSpace::ABGR8888S).
+     * WGPUTexture. The texture's logical sampled channels are RGBA; @p cs declares whether
+     * those channels are already alpha-premultiplied. Channel order and alpha encoding are
+     * independent properties, so callers must not infer @p cs from RGBA8/BGRA8 format.
      *
      * @param[in] nativeTexture The native GPU texture handle (WGPUTexture on the WebGPU backend).
      * @param[in] w The width of the texture in pixels.
      * @param[in] h The height of the texture in pixels.
+     * @param[in] cs @c ColorSpace::ABGR8888 for premultiplied sampled RGB, or
+     * @c ColorSpace::ABGR8888S for straight sampled RGB.
      *
      * @note js-seq local extension (not upstream ThorVG).
      */
-    Result loadExternal(void* nativeTexture, uint32_t w, uint32_t h) noexcept;
+    Result loadExternal(void* nativeTexture, uint32_t w, uint32_t h,
+                        ColorSpace cs = ColorSpace::ABGR8888S) noexcept;
 
     /**
      * @brief Draws this picture's texture as a DUAL-SOURCE blended coverage mask (js-seq).
@@ -1734,12 +1739,25 @@ struct TVG_API Picture : Paint
      * The colour arrives here, per paint, precisely because it is no longer in the
      * texture's pixels.
      *
-     * Requires the device to have DualSourceBlending (an OPTIONAL WebGPU feature). When it
-     * does not, this returns Result::NonSupport and the caller must emit the pair instead.
+     * This setter records coverage intent; it has no renderer/device context and therefore
+     * does not report pipeline support. Query WgCanvas::supportsDualSourceBlending() before
+     * committing to coverage-only data.
+     *
+     * @retval Result::InsufficientCondition if this is not an external-texture picture.
      *
      * @note js-seq local extension (not upstream ThorVG). WebGPU backend only.
+     * @note Duplicating an external picture copies the borrowed handle and coverage
+     * intent; both pictures require the caller to retain the same texture.
      */
     Result blendColor(uint8_t r, uint8_t g, uint8_t b) noexcept;
+
+    /**
+     * @brief Clears coverage-mask intent and restores ordinary image rendering.
+     *
+     * @retval Result::InsufficientCondition if this is not an external-texture picture.
+     * @note js-seq local extension (not upstream ThorVG).
+     */
+    Result clearBlendColor() noexcept;
 
     /**
      * @brief Sets the asset resolver callback for handling external resources (e.g., images and fonts).
@@ -2493,6 +2511,16 @@ struct TVG_API WgCanvas final : Canvas
      * @see Canvas::sync()
      */
     Result target(const Context& context, void* target, uint32_t w, uint32_t h, ColorSpace cs, int type = 0) noexcept;
+
+    /**
+     * @brief Returns whether this targeted canvas created a usable dual-source image pipeline.
+     *
+     * This is stronger than the WebGPU device feature bit: it is false when pipeline
+     * creation failed or the canvas has not been successfully targeted.
+     *
+     * @note js-seq local extension (not upstream ThorVG).
+     */
+    bool supportsDualSourceBlending() const noexcept;
 
     /**
      * @brief Creates a new WebGPU Canvas object with optional rendering engine settings.

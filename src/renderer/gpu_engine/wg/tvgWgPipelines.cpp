@@ -486,7 +486,9 @@ void WgPipelines::initialize(WgContext& context)
     //js-seq: DualSourceBlending is an OPTIONAL WebGPU feature. Creating the shader
     //module at all would raise a validation error on a device without it, so both the
     //module and the pipeline stay null there and the caller falls back to the pair.
-    if (wgpuDeviceHasFeature(context.device, WGPUFeatureName_DualSourceBlending)) {
+    const char* forceDualSrcFailure = getenv("NSEQ_THORVG_DUALSRC_PIPELINE_FAIL");
+    if (wgpuDeviceHasFeature(context.device, WGPUFeatureName_DualSourceBlending) &&
+        !(forceDualSrcFailure && forceDualSrcFailure[0] != '0')) {
         shader_image_dualsrc = createShaderModule(context.device, "The shader image dual-source", cShaderSrc_ImageDualSrc);
         image_dualsrc = createRenderPipeline(
             context.device, "The render pipeline image dual-source (subpixel text)",
@@ -496,7 +498,7 @@ void WgPipelines::initialize(WgContext& context)
             depthStencilStateShape, multisampleState);
     }
     if (getenv("NSEQ_WG_DEBUG")) fprintf(stderr, "[wg] js-seq dual-source subpixel pipeline: %s\n",
-        image_dualsrc ? "created" : "unavailable (device lacks DualSourceBlending)");
+        image_dualsrc ? "created" : "unavailable (feature absent or forced pipeline failure)");
     // render pipeline scene
     scene = createRenderPipeline(
         context.device, "The render pipeline scene",

@@ -44,6 +44,7 @@ struct PictureImpl : Picture
     bool resizing = false;
     void* externalTexture = nullptr;  //js-seq: borrowed native GPU texture (WGPUTexture), zero-copy
     uint32_t extW = 0, extH = 0;
+    ColorSpace externalColorSpace = ColorSpace::ABGR8888S;
     //js-seq: when set, externalTexture is a COVERAGE mask blended dual-source against this
     //colour (Picture::blendColor), not an image. Null colour = ordinary image path.
     RenderColor dualSrcColor{};
@@ -75,7 +76,9 @@ struct PictureImpl : Picture
         if (externalTexture) {
             //js-seq: borrowed external GPU texture — no pixel upload, composite in z-order
             auto m = transform * Matrix{1, 0, pivot.x, 0, 1, pivot.y, 0, 0, 1};
-            impl.rd = renderer->prepare(externalTexture, extW, extH, dualSrc ? &dualSrcColor : nullptr, impl.rd, m, clips, opacity, flag);
+            impl.rd = renderer->prepare(externalTexture, extW, extH, externalColorSpace,
+                                        dualSrc ? &dualSrcColor : nullptr,
+                                        impl.rd, m, clips, opacity, flag);
         } else if (bitmap) {
             if (bitmap->cs == ColorSpace::Unknown) {
                 TVGERR("RENDERER", "Unknown colorspace picture data");
@@ -210,6 +213,18 @@ struct PictureImpl : Picture
         dup->h = h;
         dup->filter = filter;
         dup->resizing = resizing;
+        // External pictures duplicate as another BORROWER of the same native
+        // texture. No ownership/refcount is invented here; the public loadExternal
+        // lifetime contract applies independently to both paints.
+        dup->externalTexture = externalTexture;
+        dup->extW = extW;
+        dup->extH = extH;
+        dup->externalColorSpace = externalColorSpace;
+        dup->dualSrcColor = dualSrcColor;
+        dup->dualSrc = dualSrc;
+        if (externalTexture) PAINT(picture)->mark(RenderUpdateFlag::Image |
+                                                        RenderUpdateFlag::Color |
+                                                        RenderUpdateFlag::Blend);
 
         return picture;
     }
