@@ -251,6 +251,8 @@ void WgCompositor::reset(WgContext& context)
 
 void WgCompositor::setScreenSize(uint32_t w, uint32_t h)
 {
+    screenW = w;
+    screenH = h;
     const float u1 = width ? std::min(1.0f, (float)w / (float)width) : 1.0f;
     const float v1 = height ? std::min(1.0f, (float)h / (float)height) : 1.0f;
     meshDataScreen.blitBox(u1, v1);
@@ -426,6 +428,9 @@ void WgCompositor::blit(WgContext& context, WGPUCommandEncoder encoder, WgRender
     renderPassEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, src->bindGroupTexture, 0, nullptr);
     wgpuRenderPassEncoderSetPipeline(renderPassEncoder, premultiplied ? pipelines.blit : pipelines.blit_unpremultiplied);
+    // The logical corner only: a destination larger than the screen (a presenter's bucketed
+    // buffer) shows its top-left screenW x screenH, and the rest is never presented.
+    wgpuRenderPassEncoderSetViewport(renderPassEncoder, 0.0f, 0.0f, (float)screenW, (float)screenH, 0.0f, 1.0f);
     drawMeshImage(context, &meshDataScreen);
     wgpuRenderPassEncoderEnd(renderPassEncoder);
     wgpuRenderPassEncoderRelease(renderPassEncoder);

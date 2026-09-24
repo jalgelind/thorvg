@@ -443,10 +443,12 @@ bool WgRenderer::sync()
 
     if (!dstTexture) return false;
 
-    // insure that the surface is the size this target was set for (js-seq: the LOGICAL size —
-    // the offscreen root is allocated at a bucket of it, and the blit samples only that part)
-    if ((wgpuTextureGetWidth(dstTexture) == mTargetSurface.w) &&
-        (wgpuTextureGetHeight(dstTexture) == mTargetSurface.h)) {
+    // insure that the destination can hold the size this target was set for (js-seq: the LOGICAL
+    // size — the offscreen root is allocated at a bucket of it and the blit samples only that
+    // part; a destination may be LARGER, a presenter's bucketed buffer that shows only its
+    // top-left w x h, and the blit's viewport keeps to that corner)
+    if ((wgpuTextureGetWidth(dstTexture) >= mTargetSurface.w) &&
+        (wgpuTextureGetHeight(dstTexture) >= mTargetSurface.h)) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
         // show root offscreen buffer

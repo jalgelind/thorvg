@@ -70,6 +70,7 @@ private:
     // js-seq: the quad the final blit draws to the screen — it samples only the logical part of
     // the (bucketed, possibly larger) root target. See setScreenSize.
     WgMeshData meshDataScreen;
+    uint32_t screenW{}, screenH{};
     // render target dimensions — the ALLOCATED size: textures, view matrix, scissors
     uint32_t width{};
     uint32_t height{};
