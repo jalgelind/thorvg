@@ -65,9 +65,16 @@ private:
     WgRenderTarget targetTemp0;
     WgRenderTarget targetTemp1;
     WGPUBindGroup bindGroupStorageTemp{};
+    bool tempsReady{};
+    void ensureTemps(WgContext& context);
+    void releaseTemps(WgContext& context);
     // composition and blend geometries
     WgMesh meshDataBlit;
-    // render target dimensions
+    // js-seq: the quad the final blit draws to the screen -- it samples only the logical part of
+    // the (bucketed, possibly larger) root target. See setScreenSize.
+    WgMesh meshDataScreen;
+    uint32_t screenW{}, screenH{};
+    // render target dimensions -- the ALLOCATED size: textures, view matrix, scissors
     uint32_t width{};
     uint32_t height{};
     
@@ -114,6 +121,9 @@ public:
     void release(WgContext& context);
     void releasePools(WgContext& context);
     void resize(WgContext& context, uint32_t width, uint32_t height);
+    // js-seq: the size the screen shows, at most the allocated one; the final blit samples
+    // (0,0)-(w,h) of the root target onto the whole screen.
+    void setScreenSize(uint32_t w, uint32_t h);
 
     // render passes workflow
     void beginRenderPassMS(WGPUCommandEncoder encoder, WgRenderTarget* target, bool clear, WGPUColor clearColor = { 0.0, 0.0, 0.0, 0.0 });
