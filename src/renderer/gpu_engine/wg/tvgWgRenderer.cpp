@@ -94,7 +94,23 @@ void WgRenderer::clearTargets()
     mTargetSurface.stride = 0;
     mTargetSurface.w = 0;
     mTargetSurface.h = 0;
+}
 
+
+// js-seq: the side a render target is allocated at for a target side `v`, given the current
+// allocation `cur`. The FIRST allocation is exact — a one-shot target (a capture, an offscreen
+// texture) never pays for a bucket. Once resized: 128-pixel buckets, grown as soon as `v`
+// outgrows them, shrunk only once `v` has fallen two buckets below — so a size wobbling across
+// one edge never reallocates on alternate frames, and a window made small again does not hold a
+// large allocation forever.
+uint32_t WgRenderer::allocSide(uint32_t v, uint32_t cur)
+{
+    constexpr uint32_t kBucket = 128;
+    if (cur == 0 || cur == v) return v;
+    const uint32_t need = (v + kBucket - 1) / kBucket * kBucket;
+    if (cur < need) return need;
+    if (cur >= need + 2 * kBucket) return need;
+    return cur;
 }
 
 void WgRenderer::surfaceConfigure(WGPUSurface surface, WgContext& context, uint32_t width, uint32_t height, ColorSpace cs)
@@ -427,9 +443,10 @@ bool WgRenderer::sync()
 
     if (!dstTexture) return false;
 
-    // insure that surface and offscreen target have the same size
-    if ((wgpuTextureGetWidth(dstTexture) == mRenderTargetRoot.width) && 
-        (wgpuTextureGetHeight(dstTexture) == mRenderTargetRoot.height)) {
+    // insure that the surface is the size this target was set for (js-seq: the LOGICAL size —
+    // the offscreen root is allocated at a bucket of it, and the blit samples only that part)
+    if ((wgpuTextureGetWidth(dstTexture) == mTargetSurface.w) &&
+        (wgpuTextureGetHeight(dstTexture) == mTargetSurface.h)) {
         WGPUTextureView dstTextureView = mContext.createTextureView(dstTexture);
         WGPUCommandEncoder commandEncoder = mContext.createCommandEncoder();
         // show root offscreen buffer
@@ -457,22 +474,34 @@ Result WgRenderer::target(const WgCanvas::Context& ctx, void* target, uint32_t w
 
     if (w == 0 || h == 0) return Result::InvalidArguments;
 
+    // js-seq: the render targets are allocated at a BUCKET of the target size, so a live resize
+    // (a new size every mouse move) reallocates them only when it crosses one — each is a full
+    // texture plus a 4x multisampled one, and there are several. Drawing is unchanged: the view
+    // matrix is the allocated size, so a pixel lands on the same texel whatever the bucket, and
+    // only the final blit (setScreenSize) and the present see the logical size.
+    const uint32_t aw = allocSide(w, mAllocW), ah = allocSide(h, mAllocH);
+
     // context has been changed, need to recreate all instances
     if ((mContext.device != ctx.device) || (mContext.instance != ctx.instance) || mContext.adapter != ctx.adapter) {
         release();
         mContext.initialize(ctx);
-        mRenderTargetPool.initialize(mContext, w, h);
-        mRenderTargetRoot.initialize(mContext, w, h);
-        mCompositor.initialize(mContext, w, h);
+        mRenderTargetPool.initialize(mContext, aw, ah);
+        mRenderTargetRoot.initialize(mContext, aw, ah);
+        mCompositor.initialize(mContext, aw, ah);
+        mAllocW = aw;
+        mAllocH = ah;
     // update render targets dimensions
-    } else if ((mTargetSurface.w != w) || (mTargetSurface.h != h) || (type == 0 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
+    } else if ((mAllocW != aw) || (mAllocH != ah) || (type == 0 ? (surface != (WGPUSurface)target) : (targetTexture != (WGPUTexture)target))) {
         mRenderTargetPool.release(mContext);
         mRenderTargetRoot.release(mContext);
         clearTargets();
-        mRenderTargetPool.initialize(mContext, w, h);
-        mRenderTargetRoot.initialize(mContext, w, h);
-        mCompositor.resize(mContext, w, h);
+        mRenderTargetPool.initialize(mContext, aw, ah);
+        mRenderTargetRoot.initialize(mContext, aw, ah);
+        mCompositor.resize(mContext, aw, ah);
+        mAllocW = aw;
+        mAllocH = ah;
     }
+    mCompositor.setScreenSize(w, h);
 
     mTargetSurface.stride = w;
     mTargetSurface.w = w;

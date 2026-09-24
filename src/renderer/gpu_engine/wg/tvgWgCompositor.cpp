@@ -61,6 +61,7 @@ void WgCompositor::initialize(WgContext& context, uint32_t width, uint32_t heigh
     resize(context, width, height);
     // composition and blend geometries
     meshDataBlit.blitBox();
+    meshDataScreen.blitBox();
     // force stage buffers initialization
     flush(context);
 }
@@ -248,9 +249,18 @@ void WgCompositor::reset(WgContext& context)
 }
 
 
+void WgCompositor::setScreenSize(uint32_t w, uint32_t h)
+{
+    const float u1 = width ? std::min(1.0f, (float)w / (float)width) : 1.0f;
+    const float v1 = height ? std::min(1.0f, (float)h / (float)height) : 1.0f;
+    meshDataScreen.blitBox(u1, v1);
+}
+
+
 void WgCompositor::flush(WgContext& context)
 {
     stageBufferGeometry.append(&meshDataBlit);
+    stageBufferGeometry.append(&meshDataScreen);
     stageBufferGeometry.flush(context);
     stageBufferSolidColor.flush(context);
     stageBufferPaint.flush(context);
@@ -404,24 +414,19 @@ void WgCompositor::composeScene(WgContext& context, WgRenderTarget* src, WgRende
 void WgCompositor::blit(WgContext& context, WGPUCommandEncoder encoder, WgRenderTarget* src, WGPUTextureView dstView, bool premultiplied)
 {
     assert(!renderPassEncoder);
-    const WGPURenderPassDepthStencilAttachment depthStencilAttachment{
-        .view = texViewDepthStencil,
-        .depthLoadOp = WGPULoadOp_Load,
-        .depthStoreOp = WGPUStoreOp_Discard,
-        .stencilLoadOp = WGPULoadOp_Load,
-        .stencilStoreOp = WGPUStoreOp_Discard
-    };
-    const WGPURenderPassColorAttachment colorAttachment { 
+    // js-seq: no depth attachment — the screen is the logical size, every depth texture the
+    // allocated one (the blit pipelines are built without depth to match).
+    const WGPURenderPassColorAttachment colorAttachment {
         .view = dstView,
         .depthSlice = WGPU_DEPTH_SLICE_UNDEFINED,
         .loadOp = WGPULoadOp_Load,
         .storeOp = WGPUStoreOp_Store,
     };
-    const WGPURenderPassDescriptor renderPassDesc{ .colorAttachmentCount = 1, .colorAttachments = &colorAttachment, .depthStencilAttachment = &depthStencilAttachment };
+    const WGPURenderPassDescriptor renderPassDesc{ .colorAttachmentCount = 1, .colorAttachments = &colorAttachment, .depthStencilAttachment = nullptr };
     renderPassEncoder = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
     wgpuRenderPassEncoderSetBindGroup(renderPassEncoder, 0, src->bindGroupTexture, 0, nullptr);
     wgpuRenderPassEncoderSetPipeline(renderPassEncoder, premultiplied ? pipelines.blit : pipelines.blit_unpremultiplied);
-    drawMeshImage(context, &meshDataBlit);
+    drawMeshImage(context, &meshDataScreen);
     wgpuRenderPassEncoderEnd(renderPassEncoder);
     wgpuRenderPassEncoderRelease(renderPassEncoder);
     renderPassEncoder = nullptr;

@@ -78,6 +78,11 @@ private:
     void clearTargets();
     void surfaceConfigure(WGPUSurface surface, WgContext& context, uint32_t width, uint32_t height, ColorSpace cs);
 
+    // js-seq: the size the render targets are ALLOCATED at — the target size rounded up to a
+    // bucket (allocSide), so a live resize reallocates only when it crosses one. mTargetSurface
+    // keeps the LOGICAL size, which is what the screen shows.
+    uint32_t mAllocW = 0, mAllocH = 0;
+    static uint32_t allocSide(uint32_t v, uint32_t cur);
     // render tree stacks
     WgRenderTarget mRenderTargetRoot;
     Array<WgCompose*> mCompositorList;
