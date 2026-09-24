@@ -67,10 +67,10 @@ void WgMeshData::imageBox(float w, float h, const Matrix& transform)
 }
 
 
-void WgMeshData::blitBox()
+void WgMeshData::blitBox(float u1, float v1)
 {
     const float vdata[] = {-1.0f, +1.0f, +1.0f, +1.0f, +1.0f, -1.0f, -1.0f, -1.0f};
-    const float tdata[] = {+0.0f, +0.0f, +1.0f, +0.0f, +1.0f, +1.0f, +0.0f, +1.0f};
+    const float tdata[] = {+0.0f, +0.0f, u1, +0.0f, u1, v1, +0.0f, v1};
     const uint32_t idata[] = { 0, 1, 2, 0, 2, 3 };
     // setup vertex data
     vbuffer.reserve(4);

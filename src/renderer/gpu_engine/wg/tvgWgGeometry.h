@@ -37,7 +37,9 @@ struct WgMeshData {
 
     void bbox(const Point pmin, const Point pmax);
     void imageBox(float w, float h, const Matrix& transform);
-    void blitBox();
+    // js-seq: `u1`/`v1` are the far texture coordinates — 1 for a quad that samples its whole
+    // source, less for one that samples only the used part of a larger (bucketed) texture.
+    void blitBox(float u1 = 1.0f, float v1 = 1.0f);
     void clear();
 
     bool invalid() { return vbuffer.empty(); }

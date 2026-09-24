@@ -141,7 +141,8 @@ private:
         const WGPUPipelineLayout pipelineLayout,
         const WGPUVertexBufferLayout *vertexBufferLayouts, const uint32_t vertexBufferLayoutsCount,
         const WGPUColorWriteMask writeMask, const WGPUTextureFormat colorTargetFormat, const WGPUBlendState blendState,
-        const WGPUDepthStencilState depthStencilState, const WGPUMultisampleState multisampleState);
+        const WGPUDepthStencilState depthStencilState, const WGPUMultisampleState multisampleState,
+        bool withDepth = true);   // js-seq: false for a pass with no depth attachment (the screen blit)
     WGPUComputePipeline createComputePipeline(
         WGPUDevice device, const char* pipelineLabel,
         const WGPUShaderModule shaderModule, const char* entryPoint,

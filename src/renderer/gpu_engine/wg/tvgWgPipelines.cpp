@@ -166,7 +166,8 @@ WGPURenderPipeline WgPipelines::createRenderPipeline(
     const WGPUPipelineLayout pipelineLayout,
     const WGPUVertexBufferLayout *vertexBufferLayouts, const uint32_t vertexBufferLayoutsCount,
     const WGPUColorWriteMask writeMask, const WGPUTextureFormat colorTargetFormat, const WGPUBlendState blendState,
-    const WGPUDepthStencilState depthStencilState, const WGPUMultisampleState multisampleState)
+    const WGPUDepthStencilState depthStencilState, const WGPUMultisampleState multisampleState,
+    bool withDepth)
 {
     const WGPUColorTargetState colorTargetState { .format = colorTargetFormat, .blend = &blendState, .writeMask = writeMask };
     const WGPUColorTargetState colorTargetStates[] { colorTargetState };
@@ -178,7 +179,7 @@ WGPURenderPipeline WgPipelines::createRenderPipeline(
         .layout = pipelineLayout,
         .vertex = vertexState,
         .primitive = primitiveState,
-        .depthStencil = &depthStencilState,
+        .depthStencil = withDepth ? &depthStencilState : nullptr,
         .multisample = multisampleState,
         .fragment = &fragmentState
     };
@@ -516,12 +517,15 @@ void WgPipelines::initialize(WgContext& context)
     // nulls, so teardown is unchanged.
 
     // render pipeline blit
+    // js-seq: no depth. The screen is the logical size and the depth textures are the render
+    // targets' allocated (bucketed) size, and one pass cannot mix attachment sizes — the blit
+    // tests nothing against depth anyway.
     blit = createRenderPipeline(
         context.device, "The render pipeline blit",
         shader_blit, "vs_main", "fs_main",
         layout_blit, vertexBufferLayoutsImage, 2,
         WGPUColorWriteMask_All, context.format, blendStateSrc,  // must be preferred screen pixel format
-        depthStencilStateScene, multisampleStateX1);
+        depthStencilStateScene, multisampleStateX1, /*withDepth=*/false);
 
     // TODO: either premultiplied blit or unpremultplied bit used.
     blit_unpremultiplied = createRenderPipeline(
@@ -529,7 +533,7 @@ void WgPipelines::initialize(WgContext& context)
         shader_blit, "vs_main", "fs_main_unpremultiplied",
         layout_blit, vertexBufferLayoutsImage, 2,
         WGPUColorWriteMask_All, context.format, blendStateSrc,  // must be preferred screen pixel format
-        depthStencilStateScene, multisampleStateX1);
+        depthStencilStateScene, multisampleStateX1, /*withDepth=*/false);
 
     // effects
     dropshadow = createRenderPipeline(
