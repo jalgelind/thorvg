@@ -111,15 +111,10 @@ void WgCompositor::releasePools(WgContext& context)
 void WgCompositor::resize(WgContext& context, uint32_t width, uint32_t height) {
     // release existig handles
     if ((this->width != width) || (this->height != height)) {
-        context.layouts.releaseBindGroup(bindGroupStorageTemp);
-        // release intermediate render target
-        targetTemp1.release(context);
-        targetTemp0.release(context);
+        releaseTemps(context);
         // release global stencil buffer handles
         context.releaseTextureView(texViewDepthStencilMS);
         context.releaseTexture(texDepthStencilMS);
-        context.releaseTextureView(texViewDepthStencil);
-        context.releaseTexture(texDepthStencil);
         // store render target dimensions
         this->height = height;
         this->width = width;
@@ -133,15 +128,38 @@ void WgCompositor::resize(WgContext& context, uint32_t width, uint32_t height) {
         // update global view matrix handles
         updateViewMat(context, width, height);
         // allocate global stencil buffer handles
-        texDepthStencil = context.createTexAttachement(width, height, WGPUTextureFormat_Depth24PlusStencil8, 1);
-        texViewDepthStencil = context.createTextureView(texDepthStencil);
         texDepthStencilMS = context.createTexAttachement(width, height, WGPUTextureFormat_Depth24PlusStencil8, 4);
         texViewDepthStencilMS = context.createTextureView(texDepthStencilMS);
-        // initialize intermediate render targets
-        targetTemp0.initialize(context, width, height);
-        targetTemp1.initialize(context, width, height);
-        bindGroupStorageTemp = context.layouts.createBindGroupStrorage2RO(targetTemp0.texView, targetTemp1.texView);
+        // the intermediate render targets are created on first use (ensureTemps)
     }
+}
+
+
+// js-seq: two full-size targets, each with a 4x multisampled twin, plus the single-sampled stencil
+// the effect passes draw with — read only by blending, masking and effects. A UI that never blends
+// would otherwise hold them for nothing (28 MB at 1024x640, ~360 MB at 4K), so they are created
+// on first use and dropped on resize.
+void WgCompositor::ensureTemps(WgContext& context)
+{
+    if (tempsReady || width == 0 || height == 0) return;
+    targetTemp0.initialize(context, width, height);
+    targetTemp1.initialize(context, width, height);
+    texDepthStencil = context.createTexAttachement(width, height, WGPUTextureFormat_Depth24PlusStencil8, 1);
+    texViewDepthStencil = context.createTextureView(texDepthStencil);
+    bindGroupStorageTemp = context.layouts.createBindGroupStrorage2RO(targetTemp0.texView, targetTemp1.texView);
+    tempsReady = true;
+}
+
+
+void WgCompositor::releaseTemps(WgContext& context)
+{
+    if (!tempsReady) return;
+    context.layouts.releaseBindGroup(bindGroupStorageTemp);
+    targetTemp1.release(context);
+    targetTemp0.release(context);
+    context.releaseTextureView(texViewDepthStencil);
+    context.releaseTexture(texDepthStencil);
+    tempsReady = false;
 }
 
 
@@ -524,6 +542,7 @@ void WgCompositor::drawShape(WgContext& context, WgRenderDataShape* renderData)
 
 void WgCompositor::blendShape(WgContext& context, WgRenderDataShape* renderData, BlendMethod blendMethod)
 {
+    ensureTemps(context);
     assert(renderData);
     assert(renderPassEncoder);
     if (renderData->renderSettingsShape.skip || renderData->meshShape.vbuffer.count == 0 || renderData->viewport.invalid()) return;
@@ -642,6 +661,7 @@ void WgCompositor::drawStrokes(WgContext& context, WgRenderDataShape* renderData
 
 void WgCompositor::blendStrokes(WgContext& context, WgRenderDataShape* renderData, BlendMethod blendMethod)
 {
+    ensureTemps(context);
     assert(renderData);
     assert(renderPassEncoder);
     if (renderData->renderSettingsStroke.skip || renderData->meshStrokes.vbuffer.count == 0 || renderData->viewport.invalid()) return;
@@ -749,6 +769,7 @@ void WgCompositor::drawImage(WgContext& context, WgRenderDataPicture* renderData
 
 void WgCompositor::blendImage(WgContext& context, WgRenderDataPicture* renderData, BlendMethod blendMethod)
 {
+    ensureTemps(context);
     assert(renderData);
     assert(renderPassEncoder);
     if (renderData->viewport.invalid() || !renderData->imageBindGroup) return;
@@ -826,6 +847,7 @@ void WgCompositor::drawScene(WgContext& context, WgRenderTarget* scene, WgCompos
 
 void WgCompositor::blendScene(WgContext& context, WgRenderTarget* scene, WgCompose* compose)
 {
+    ensureTemps(context);
     assert(scene);
     assert(compose);
     assert(currentTarget);
@@ -941,6 +963,7 @@ void WgCompositor::clearClipPath(WgContext& context, WgRenderDataPaint* paint)
 
 bool WgCompositor::gaussianBlur(WgContext& context, WgRenderTarget* dst, const RenderEffectGaussianBlur* params, const WgCompose* compose)
 {
+    ensureTemps(context);
     assert(dst);
     assert(params);
     assert(params->rd);
@@ -989,6 +1012,7 @@ bool WgCompositor::gaussianBlur(WgContext& context, WgRenderTarget* dst, const R
 
 bool WgCompositor::dropShadow(WgContext& context, WgRenderTarget* dst, const RenderEffectDropShadow* params, const WgCompose* compose)
 {
+    ensureTemps(context);
     assert(dst);
     assert(params);
     assert(params->rd);
@@ -1033,6 +1057,7 @@ bool WgCompositor::dropShadow(WgContext& context, WgRenderTarget* dst, const Ren
 
 bool WgCompositor::fillEffect(WgContext& context, WgRenderTarget* dst, const RenderEffectFill* params, const WgCompose* compose)
 {
+    ensureTemps(context);
     assert(dst);
     assert(params);
     assert(params->rd);
@@ -1056,6 +1081,7 @@ bool WgCompositor::fillEffect(WgContext& context, WgRenderTarget* dst, const Ren
 
 bool WgCompositor::tintEffect(WgContext& context, WgRenderTarget* dst, const RenderEffectTint* params, const WgCompose* compose)
 {
+    ensureTemps(context);
     assert(dst);
     assert(params);
     assert(params->rd);
@@ -1078,6 +1104,7 @@ bool WgCompositor::tintEffect(WgContext& context, WgRenderTarget* dst, const Ren
 
 bool WgCompositor::tritoneEffect(WgContext& context, WgRenderTarget* dst, const RenderEffectTritone* params, const WgCompose* compose)
 {
+    ensureTemps(context);
     assert(dst);
     assert(params);
     assert(params->rd);

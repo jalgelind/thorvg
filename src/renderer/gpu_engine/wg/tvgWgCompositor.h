@@ -65,6 +65,9 @@ private:
     WgRenderTarget targetTemp0;
     WgRenderTarget targetTemp1;
     WGPUBindGroup bindGroupStorageTemp{};
+    bool tempsReady{};
+    void ensureTemps(WgContext& context);
+    void releaseTemps(WgContext& context);
     // composition and blend geometries
     WgMeshData meshDataBlit;
     // js-seq: the quad the final blit draws to the screen — it samples only the logical part of
