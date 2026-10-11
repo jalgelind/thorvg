@@ -1,5 +1,9 @@
 test_compiler_flags = compiler_flags
 
+# The resources' absolute path, on the tests only: as a project argument it went into every
+# library object too, so no two checkouts could share a compiler cache entry (js-seq).
+test_compiler_flags += ['-DTEST_DIR="@0@/resources"'.format('/'.join(meson.current_source_dir().split('\\')))]
+
 if lib_type == 'static'
     test_compiler_flags += ['-DTVG_STATIC']
 endif
